@@ -25,7 +25,7 @@
  * | RGB LED red / green / blue (220 Ω each, common cathode) | GPIO 4 / 16 / 17 |
  */
 #include <Arduino.h>
-#include <ModestIoT.h>
+#include "WiFiConnectivityDriver.h"
 #include "EdgeGatewayClient.h"
 #include "EnvironmentMonitorDevice.h"
 

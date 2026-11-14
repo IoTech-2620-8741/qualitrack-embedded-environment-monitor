@@ -21,7 +21,12 @@
 #ifndef ENVIRONMENT_MONITOR_DEVICE_H
 #define ENVIRONMENT_MONITOR_DEVICE_H
 
-#include <ModestIoT.h>
+// Only the framework components the node uses, so the Wokwi project needs no other framework file.
+#include "Buzzer.h"
+#include "Device.h"
+#include "GasSensor.h"
+#include "PassiveInfraredSensor.h"
+#include "RgbLed.h"
 #include "AirQualityProfile.h"
 #include "EdgeGatewayClient.h"
 
