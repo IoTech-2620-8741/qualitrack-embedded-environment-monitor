@@ -5,6 +5,7 @@
 #include "EnvironmentMonitorDevice.h"
 #include "AirQualityProfileTranslator.h"
 #include "EnvironmentReadingPackage.h"
+#include "NodeLog.h"
 #include "TimeSynchronizationDriver.h"
 
 namespace {
@@ -61,7 +62,7 @@ EnvironmentMonitorDevice::EnvironmentMonitorDevice(const int motionPin, const in
 
     initializeAsynchronousEngine(QUEUE_LENGTH);
     setTelemetryGateway(&gatewayClient);
-    MODEST_LOG_I(LOG_TAG, "Calibrating the MQ-135 in clean air for 30 seconds");
+    NODE_LOG_I(LOG_TAG, "Calibrating the MQ-135 in clean air for 30 seconds");
 }
 
 EnvironmentMonitorDevice::~EnvironmentMonitorDevice() {
@@ -90,12 +91,12 @@ void EnvironmentMonitorDevice::on(const Event event) {
             break;
         case Sensor::SENSOR_FAULT_EVENT_IDENTIFIER:
             airQualityFaulted = true;
-            MODEST_LOG_E(LOG_TAG, "Sensor fault on GPIO %d", event.sourceId);
+            NODE_LOG_E(LOG_TAG, "Sensor fault on GPIO %d", event.sourceId);
             showColor(RgbLed::PURPLE);
             break;
         case Sensor::SENSOR_RECOVERED_EVENT_IDENTIFIER:
             airQualityFaulted = false;
-            MODEST_LOG_I(LOG_TAG, "Sensor recovered on GPIO %d", event.sourceId);
+            NODE_LOG_I(LOG_TAG, "Sensor recovered on GPIO %d", event.sourceId);
             showState();
             break;
         default:
@@ -112,7 +113,7 @@ void EnvironmentMonitorDevice::onEdgeConfiguration(const JsonObjectConst configu
     if (AirQualityProfileTranslator::fromEdgeConfiguration(configuration, edgeProfile)) {
         profileMailbox.post(edgeProfile);
     } else {
-        MODEST_LOG_W(LOG_TAG, "The configuration of the Edge has no valid air quality profile");
+        NODE_LOG_W(LOG_TAG, "The configuration of the Edge has no valid air quality profile");
     }
 }
 
@@ -131,7 +132,7 @@ void EnvironmentMonitorDevice::onAirQualityRead() {
     lastAirQualityInPpm = airQualitySensor.getGasConcentrationInPpm();
     if (!calibrated) {
         calibrated = true;
-        MODEST_LOG_I(LOG_TAG, "MQ-135 calibrated; first reading %.1f ppm", lastAirQualityInPpm);
+        NODE_LOG_I(LOG_TAG, "MQ-135 calibrated; first reading %.1f ppm", lastAirQualityInPpm);
         changeState(profile.classify(lastAirQualityInPpm));
         reportAirQuality();
         return;
@@ -147,7 +148,7 @@ void EnvironmentMonitorDevice::onAirQualityRead() {
 void EnvironmentMonitorDevice::reportAirQuality() {
     if (!calibrated) return;
     if (!EdgeGatewayClient::isClockSynchronized()) {
-        MODEST_LOG_W(LOG_TAG, "Air quality %.1f ppm not sent: clock not synchronized", lastAirQualityInPpm);
+        NODE_LOG_W(LOG_TAG, "Air quality %.1f ppm not sent: clock not synchronized", lastAirQualityInPpm);
         return;
     }
     enqueueTelemetryPayload(EnvironmentReadingPackage::airQuality(
@@ -155,9 +156,9 @@ void EnvironmentMonitorDevice::reportAirQuality() {
 }
 
 void EnvironmentMonitorDevice::reportMotion(const bool motionDetected) {
-    MODEST_LOG_I(LOG_TAG, "Motion %s", motionDetected ? "detected" : "stopped");
+    NODE_LOG_I(LOG_TAG, "Motion %s", motionDetected ? "detected" : "stopped");
     if (!EdgeGatewayClient::isClockSynchronized()) {
-        MODEST_LOG_W(LOG_TAG, "Motion not sent: clock not synchronized");
+        NODE_LOG_W(LOG_TAG, "Motion not sent: clock not synchronized");
         return;
     }
     enqueueTelemetryPayload(EnvironmentReadingPackage::motion(
@@ -168,7 +169,7 @@ void EnvironmentMonitorDevice::applyNewProfile() {
     AirQualityProfile edgeProfile;
     if (!profileMailbox.take(edgeProfile) || edgeProfile.getVersion() == profile.getVersion()) return;
     profile = edgeProfile;
-    MODEST_LOG_I(LOG_TAG, "Applying version %u of the air quality profile", static_cast<unsigned>(profile.getVersion()));
+    NODE_LOG_I(LOG_TAG, "Applying version %u of the air quality profile", static_cast<unsigned>(profile.getVersion()));
     if (calibrated) {
         const EnvironmentalState newState = profile.classify(lastAirQualityInPpm);
         if (newState != environmentalState) changeState(newState);
@@ -178,7 +179,7 @@ void EnvironmentMonitorDevice::applyNewProfile() {
 void EnvironmentMonitorDevice::changeState(const EnvironmentalState newState) {
     const EnvironmentalState previousState = environmentalState;
     environmentalState = newState;
-    MODEST_LOG_I(LOG_TAG, "Air quality %.1f ppm: %s -> %s", lastAirQualityInPpm,
+    NODE_LOG_I(LOG_TAG, "Air quality %.1f ppm: %s -> %s", lastAirQualityInPpm,
                  AirQualityProfile::nameOf(previousState), AirQualityProfile::nameOf(newState));
     showState();
     switch (newState) {

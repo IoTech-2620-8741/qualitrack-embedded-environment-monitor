@@ -6,7 +6,7 @@
 #include <HTTPClient.h>
 #include <WiFi.h>
 #include "EdgeTelemetryPackage.h"
-#include "ModestLog.h"
+#include "NodeLog.h"
 #include "TimeSynchronizationDriver.h"
 
 namespace {
@@ -52,7 +52,7 @@ bool EdgeGatewayClient::sendTelemetryRecord(const TelemetryPackage& abstractTele
     request["device_id"] = deviceId;
     package.serialize(request); // The fields of the Edge only: no framework envelope.
     if (serializeJson(request, serializationBuffer, sizeof(serializationBuffer)) == 0) {
-        MODEST_LOG_W(LOG_TAG, "Request too large for %u bytes", static_cast<unsigned>(SERIALIZATION_BUFFER_SIZE));
+        NODE_LOG_W(LOG_TAG, "Request too large for %u bytes", static_cast<unsigned>(SERIALIZATION_BUFFER_SIZE));
         sendsFailedCount++;
         return false;
     }
@@ -60,23 +60,23 @@ bool EdgeGatewayClient::sendTelemetryRecord(const TelemetryPackage& abstractTele
     const int status = exchange("POST", package.getEdgeRoute(), serializationBuffer, nullptr);
     if (status == HTTP_CREATED || status == HTTP_OK) {
         sendsSucceededCount++;
-        MODEST_LOG_D(LOG_TAG, "%s -> %d", serializationBuffer, status);
+        NODE_LOG_D(LOG_TAG, "%s -> %d", serializationBuffer, status);
         return true;
     }
     sendsFailedCount++;
     switch (status) {
         case HTTP_UNAUTHORIZED:
             signedIn = false;
-            MODEST_LOG_E(LOG_TAG, "The Edge rejected %s or its API key", deviceId);
+            NODE_LOG_E(LOG_TAG, "The Edge rejected %s or its API key", deviceId);
             break;
         case HTTP_CONFLICT:
-            MODEST_LOG_W(LOG_TAG, "The Edge already has this observation with other values: %s", serializationBuffer);
+            NODE_LOG_W(LOG_TAG, "The Edge already has this observation with other values: %s", serializationBuffer);
             break;
         case HTTP_BAD_REQUEST:
-            MODEST_LOG_W(LOG_TAG, "The Edge rejected the data: %s", serializationBuffer);
+            NODE_LOG_W(LOG_TAG, "The Edge rejected the data: %s", serializationBuffer);
             break;
         default:
-            MODEST_LOG_W(LOG_TAG, "Telemetry not delivered to %s%s (status %d)",
+            NODE_LOG_W(LOG_TAG, "Telemetry not delivered to %s%s (status %d)",
                          serviceEndpointUrl, package.getEdgeRoute(), status);
     }
     return false;
@@ -127,9 +127,9 @@ void EdgeGatewayClient::synchronizeClock() {
     // The driver only marks the clock as synchronized inside initialize(), so the gateway retries it.
     TimeSynchronizationDriver::initialize(timeZone, ntpServer);
     if (TimeSynchronizationDriver::isSynchronized()) {
-        MODEST_LOG_I(LOG_TAG, "Clock synchronized with %s", ntpServer);
+        NODE_LOG_I(LOG_TAG, "Clock synchronized with %s", ntpServer);
     } else {
-        MODEST_LOG_W(LOG_TAG, "Clock not synchronized yet; observations wait for it");
+        NODE_LOG_W(LOG_TAG, "Clock not synchronized yet; observations wait for it");
     }
 }
 
@@ -140,7 +140,7 @@ void EdgeGatewayClient::checkSignIn() {
 
     const int healthStatus = exchange("GET", HEALTH_ROUTE, nullptr, nullptr);
     if (healthStatus <= 0) {
-        MODEST_LOG_W(LOG_TAG, "Edge not reachable at %s", serviceEndpointUrl);
+        NODE_LOG_W(LOG_TAG, "Edge not reachable at %s", serviceEndpointUrl);
         return;
     }
 
@@ -151,11 +151,11 @@ void EdgeGatewayClient::checkSignIn() {
     const int status = exchange("POST", SIGN_IN_ROUTE, body, nullptr);
     if (status == HTTP_OK) {
         signedIn = true;
-        MODEST_LOG_I(LOG_TAG, "Edge accepted %s (health %d)", deviceId, healthStatus);
+        NODE_LOG_I(LOG_TAG, "Edge accepted %s (health %d)", deviceId, healthStatus);
     } else if (status == HTTP_UNAUTHORIZED) {
-        MODEST_LOG_E(LOG_TAG, "Edge rejected %s: check DEVICE_ID and DEVICE_API_KEY", deviceId);
+        NODE_LOG_E(LOG_TAG, "Edge rejected %s: check DEVICE_ID and DEVICE_API_KEY", deviceId);
     } else {
-        MODEST_LOG_W(LOG_TAG, "Sign-in of %s answered %d", deviceId, status);
+        NODE_LOG_W(LOG_TAG, "Sign-in of %s answered %d", deviceId, status);
     }
 }
 
@@ -171,16 +171,16 @@ void EdgeGatewayClient::refreshConfiguration() {
     String responseBody;
     const int status = exchange("GET", route, nullptr, &responseBody);
     if (status == HTTP_NOT_FOUND) {
-        MODEST_LOG_W(LOG_TAG, "The Edge has no profile of the cloud for %s yet", deviceId);
+        NODE_LOG_W(LOG_TAG, "The Edge has no profile of the cloud for %s yet", deviceId);
         return;
     }
     if (status != HTTP_OK) {
-        MODEST_LOG_W(LOG_TAG, "Configuration of %s not read (status %d)", deviceId, status);
+        NODE_LOG_W(LOG_TAG, "Configuration of %s not read (status %d)", deviceId, status);
         return;
     }
     JsonDocument configuration;
     if (const DeserializationError error = deserializeJson(configuration, responseBody); error) {
-        MODEST_LOG_W(LOG_TAG, "Configuration of %s not understood: %s", deviceId, error.c_str());
+        NODE_LOG_W(LOG_TAG, "Configuration of %s not understood: %s", deviceId, error.c_str());
         return;
     }
     configurationRead = true;
@@ -190,7 +190,7 @@ void EdgeGatewayClient::refreshConfiguration() {
 int EdgeGatewayClient::exchange(const char* method, const char* route, const char* body, String* responseBody) const {
     char url[URL_BUFFER_SIZE];
     if (snprintf(url, sizeof(url), "%s%s", serviceEndpointUrl, route) >= static_cast<int>(sizeof(url))) {
-        MODEST_LOG_E(LOG_TAG, "URL too long for %s", route);
+        NODE_LOG_E(LOG_TAG, "URL too long for %s", route);
         return -1;
     }
     WiFiClient socket;
