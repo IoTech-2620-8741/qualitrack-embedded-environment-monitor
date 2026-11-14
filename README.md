@@ -66,49 +66,40 @@ Notes on the framework v1.0.0:
 
 ## Build with arduino-cli
 
-1. Install the ESP32 core and ArduinoJson:
+1. Install the ESP32 core and the framework v1.0.0 from the Arduino Library Manager, which also installs the
+   libraries it depends on (ArduinoJson and MQTT):
 
    ```bash
    arduino-cli core install esp32:esp32
-   arduino-cli lib install ArduinoJson
+   arduino-cli lib install "Modest-IoT-Nano-Framework@1.0.0"
    ```
 
-2. Clone the framework at v1.0.0 next to this repository:
-
-   ```bash
-   git clone --branch v1.0.0 https://github.com/modest-iot/modest-iot-nano-framework.git
-   ```
-
-3. Copy `EnvironmentMonitor/secrets.example.h` as `EnvironmentMonitor/secrets.h` and set the Wi-Fi network, the URL
+2. Copy `EnvironmentMonitor/secrets.example.h` as `EnvironmentMonitor/secrets.h` and set the Wi-Fi network, the URL
    of the Edge, the identifier of the node and its API key.
 
-4. Compile (and add `--upload --port <port>` to flash the board):
+3. Compile (and add `--upload --port <port>` to flash the board):
 
    ```bash
-   arduino-cli compile --fqbn esp32:esp32:esp32 --library ../modest-iot-nano-framework EnvironmentMonitor
+   arduino-cli compile --fqbn esp32:esp32:esp32 EnvironmentMonitor
    ```
 
-It was verified with arduino-cli 1.x, ESP32 core 3.3 and ArduinoJson 7.4.
+It was verified with arduino-cli 1.x, ESP32 core 3.3, ArduinoJson 7.4 and MQTT 2.5.
 
 ## Simulate in Wokwi
 
 Open the published project: [qualitrack-environment-monitor](https://wokwi.com/projects/480697842499374081). When the
 sketch changes, update its files there, or build a new project with the steps below.
 
-The `ModestIoT` library published on Wokwi is an older version of the framework (without `ModestLog.h`, and with the
-MQTT client on PubSubClient), and Wokwi needs a paid plan to upload a library. The project therefore takes the
-framework v1.0.0 as source files:
+`libraries.txt` takes the framework v1.0.0 from the Arduino Library Manager, as arduino-cli does. The `ModestIoT`
+library published on Wokwi (`ModestIoT@wokwi:...`) is an older version of the framework, without `ModestLog.h` and
+with the MQTT client on PubSubClient, so the sketch does not use it.
 
 1. Create a new ESP32 project in Wokwi.
 2. Paste `EnvironmentMonitor.ino` into `sketch.ino`, and `diagram.json` and `libraries.txt` into the files of the same
    name.
 3. Add the other `.h` and `.cpp` files of `EnvironmentMonitor/` (without `secrets.h`, so the sketch takes
    `secrets.example.h`).
-4. Add these 28 files of `src/` of the framework v1.0.0:
-   `Actuator`, `Buzzer`, `Device`, `GasSensor`, `PassiveInfraredSensor`, `RgbLed`, `SamplingScheduler`, `Sensor`,
-   `TimeSynchronizationDriver` and `WiFiConnectivityDriver` (`.h` and `.cpp`), and `Command.h`, `CommandHandler.h`,
-   `ConnectivityDriver.h`, `Event.h`, `EventHandler.h`, `GatewayClient.h`, `ModestLog.h` and `TelemetryPackage.h`.
-5. Start the simulation.
+4. Start the simulation. The first build compiles the whole framework and takes about two minutes.
 
 What to expect:
 

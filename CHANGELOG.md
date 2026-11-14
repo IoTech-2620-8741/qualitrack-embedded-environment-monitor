@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-14
+
+### Changed
+
+- The framework v1.0.0 comes from the Arduino Library Manager (`Modest-IoT-Nano-Framework`), in arduino-cli and in
+  Wokwi, so the Wokwi project no longer carries 28 source files of the framework and the build needs no clone of it.
+  The sketch includes `<ModestIoT.h>`, as the examples of the framework do (#2).
+
 ## [0.1.0] - 2026-11-14
 
 First version of the Embedded Application of the Environment Monitor: the stories MS01–MS05, MS14, MS15 and US66 of

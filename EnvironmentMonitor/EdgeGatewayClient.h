@@ -23,8 +23,7 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <atomic>
-#include "GatewayClient.h"
-#include "WiFiConnectivityDriver.h"
+#include <ModestIoT.h>
 
 /**
  * @brief Receives the configuration the Edge hands the node.
