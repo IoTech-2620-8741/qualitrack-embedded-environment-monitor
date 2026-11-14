@@ -71,6 +71,16 @@ public:
     static constexpr int ALARM_REPEAT_EVENT_IDENTIFIER = 1001;
     /// Interval of the critical alarm.
     static constexpr uint32_t ALARM_REPEAT_INTERVAL_IN_MILLISECONDS = 2000;
+    /**
+     * @brief Event the scheduler raises to classify the latest air quality sample.
+     *
+     * The `GasSensor` raises `DATA_READ` only when Rs/R0 moves by more than 0.05, which near the limits
+     * of the profile is about a fifth of the ppm value. The device therefore classifies every sample
+     * itself, with the R0 found in the calibration.
+     */
+    static constexpr int AIR_QUALITY_EVALUATION_EVENT_IDENTIFIER = 1002;
+    /// Interval of the classification, the sampling interval of the `GasSensor`.
+    static constexpr uint32_t AIR_QUALITY_EVALUATION_INTERVAL_IN_MILLISECONDS = 1000;
     /// Consecutive failed reads before the sensors report a fault.
     static constexpr uint8_t SENSOR_FAULT_THRESHOLD = 3;
 
@@ -145,9 +155,12 @@ private:
     EnvironmentalState environmentalState;
     bool calibrated;
     bool airQualityFaulted;
+    float cleanAirResistanceInKiloOhm;
     float lastAirQualityInPpm;
 
-    void onAirQualityRead();
+    void onCalibrationCompleted();
+    void evaluateAirQuality();
+    [[nodiscard]] float readAirQualityInPpm() const;
     void reportAirQuality();
     void reportMotion(bool motionDetected);
     void applyNewProfile();

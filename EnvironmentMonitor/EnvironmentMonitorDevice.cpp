@@ -3,6 +3,7 @@
  * @brief Implements the reactions of the Environment Monitor to its sensors and to the Edge profile.
  */
 #include "EnvironmentMonitorDevice.h"
+#include <cmath>
 #include "AirQualityProfileTranslator.h"
 #include "EnvironmentReadingPackage.h"
 #include "NodeLog.h"
@@ -42,6 +43,7 @@ EnvironmentMonitorDevice::EnvironmentMonitorDevice(const int motionPin, const in
       environmentalState(EnvironmentalState::Normal),
       calibrated(false),
       airQualityFaulted(false),
+      cleanAirResistanceInKiloOhm(0.0f),
       lastAirQualityInPpm(0.0f)
 {
     airQualitySensor.setGasCalibrationParameters(AIR_QUALITY_GAS_TYPE, AIR_QUALITY_CURVE_SLOPE,
@@ -59,6 +61,8 @@ EnvironmentMonitorDevice::EnvironmentMonitorDevice(const int motionPin, const in
     appendSensorToTriggeringScheduler(&motionSensor, Sensor::MEASURE_DATA_REQUESTED_EVENT_IDENTIFIER, CHANGE);
     appendSensorToScheduler(this, AIR_QUALITY_REPORT_EVENT_IDENTIFIER, AIR_QUALITY_REPORT_INTERVAL_IN_MILLISECONDS);
     appendSensorToScheduler(this, ALARM_REPEAT_EVENT_IDENTIFIER, ALARM_REPEAT_INTERVAL_IN_MILLISECONDS);
+    appendSensorToScheduler(this, AIR_QUALITY_EVALUATION_EVENT_IDENTIFIER,
+                            AIR_QUALITY_EVALUATION_INTERVAL_IN_MILLISECONDS);
 
     initializeAsynchronousEngine(QUEUE_LENGTH);
     setTelemetryGateway(&gatewayClient);
@@ -72,7 +76,10 @@ EnvironmentMonitorDevice::~EnvironmentMonitorDevice() {
 void EnvironmentMonitorDevice::on(const Event event) {
     switch (event.identifier) {
         case Sensor::DATA_READ_EVENT_IDENTIFIER:
-            onAirQualityRead();
+            onCalibrationCompleted();
+            break;
+        case AIR_QUALITY_EVALUATION_EVENT_IDENTIFIER:
+            evaluateAirQuality();
             break;
         case PassiveInfraredSensor::MOTION_DETECTED_EVENT_IDENTIFIER:
             reportMotion(true);
@@ -127,22 +134,46 @@ void EnvironmentMonitorDevice::maintainNetworkServices() const {
     gatewayClient.service();
 }
 
-void EnvironmentMonitorDevice::onAirQualityRead() {
-    if (airQualitySensor.getOperatingMode() != GasSensor::OperatingMode::AccurateMode) return;
-    lastAirQualityInPpm = airQualitySensor.getGasConcentrationInPpm();
-    if (!calibrated) {
-        calibrated = true;
-        NODE_LOG_I(LOG_TAG, "MQ-135 calibrated; first reading %.1f ppm", lastAirQualityInPpm);
-        changeState(profile.classify(lastAirQualityInPpm));
-        reportAirQuality();
-        return;
+void EnvironmentMonitorDevice::onCalibrationCompleted() {
+    // The first DATA_READ of the GasSensor ends its calibration; later samples go through evaluateAirQuality().
+    if (calibrated || airQualitySensor.getOperatingMode() != GasSensor::OperatingMode::AccurateMode) return;
+    const float sensorResistanceInKiloOhm = airQualitySensor.getSensorResistanceInKiloOhm();
+    const float ratio = airQualitySensor.getRsR0Ratio();
+    if (sensorResistanceInKiloOhm <= 0.0f || ratio <= 0.0f) return;
+    cleanAirResistanceInKiloOhm = sensorResistanceInKiloOhm / ratio; // Same sample, so this is the R0 of the sensor.
+    calibrated = true;
+    lastAirQualityInPpm = readAirQualityInPpm();
+    applyNewProfile();
+    const EnvironmentalState initialState = profile.classify(lastAirQualityInPpm);
+    NODE_LOG_I(LOG_TAG, "MQ-135 calibrated (R0 %.2f kOhm); air quality %.1f ppm, %s", cleanAirResistanceInKiloOhm,
+               lastAirQualityInPpm, AirQualityProfile::nameOf(initialState));
+    if (initialState != environmentalState) {
+        changeState(initialState);
+    } else {
+        showState();
     }
+    reportAirQuality();
+}
+
+void EnvironmentMonitorDevice::evaluateAirQuality() {
+    if (!calibrated || airQualityFaulted) return;
+    const float airQualityInPpm = readAirQualityInPpm();
+    if (std::isnan(airQualityInPpm)) return;
+    lastAirQualityInPpm = airQualityInPpm;
     applyNewProfile();
     const EnvironmentalState newState = profile.evaluate(lastAirQualityInPpm, environmentalState);
     if (newState != environmentalState) {
         changeState(newState);
         reportAirQuality(); // The Edge and the cloud learn about the change at once.
     }
+}
+
+float EnvironmentMonitorDevice::readAirQualityInPpm() const {
+    // The resistance of the last sample is always fresh; the ratio and ppm the GasSensor keeps are not.
+    const float sensorResistanceInKiloOhm = airQualitySensor.getSensorResistanceInKiloOhm();
+    if (sensorResistanceInKiloOhm <= 0.0f || cleanAirResistanceInKiloOhm <= 0.0f) return NAN;
+    const float ratio = sensorResistanceInKiloOhm / cleanAirResistanceInKiloOhm;
+    return powf(10.0f, (log10f(ratio) - AIR_QUALITY_CURVE_INTERCEPT) / AIR_QUALITY_CURVE_SLOPE);
 }
 
 void EnvironmentMonitorDevice::reportAirQuality() {
