@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-14
+
 First version of the Embedded Application of the Environment Monitor: the stories MS01–MS05, MS14, MS15 and US66 of
 the QualiTrack Report on the Modest IoT Nano Framework v1.0.0.
 
