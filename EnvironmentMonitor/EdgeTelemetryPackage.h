@@ -14,7 +14,7 @@
 #include <ArduinoJson.h>
 #include <cstddef>
 #include <cstdint>
-#include "TelemetryPackage.h"
+#include <ModestIoT.h>
 
 /**
  * @brief Base of the packages the node sends to the Edge API.
