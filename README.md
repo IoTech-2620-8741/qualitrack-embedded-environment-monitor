@@ -92,6 +92,9 @@ It was verified with arduino-cli 1.x, ESP32 core 3.3 and ArduinoJson 7.4.
 
 ## Simulate in Wokwi
 
+Open the published project: [qualitrack-environment-monitor](https://wokwi.com/projects/480697842499374081). When the
+sketch changes, update its files there, or build a new project with the steps below.
+
 The `ModestIoT` library published on Wokwi is an older version of the framework (without `ModestLog.h`, and with the
 MQTT client on PubSubClient), and Wokwi needs a paid plan to upload a library. The project therefore takes the
 framework v1.0.0 as source files:
@@ -156,6 +159,12 @@ arduino-cli and simulated in Wokwi.
 
 The repository follows GitFlow: `main` keeps the released versions, `develop` integrates the work, and each change is
 made in a `feature/*` branch created from `develop`. Commit messages follow Conventional Commits.
+
+## Changelog and License
+
+- [CHANGELOG.md](CHANGELOG.md) lists the changes of every version, following Keep a Changelog.
+- QualiTrack is proprietary software of IoTech; see [LICENSE.md](LICENSE.md). The Modest IoT Nano Framework and
+  ArduinoJson keep their own licenses (Apache-2.0 and MIT).
 
 ## Related Repositories
 
