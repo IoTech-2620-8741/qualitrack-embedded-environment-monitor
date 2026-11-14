@@ -4,13 +4,13 @@
   "editor": "wokwi",
   "parts": [
     { "type": "wokwi-esp32-devkit-v1", "id": "esp", "top": 0, "left": 0, "attrs": {} },
-    { "type": "wokwi-pir-motion-sensor", "id": "pir", "top": -120, "left": 220, "attrs": {} },
-    { "type": "wokwi-gas-sensor", "id": "gas", "top": 40, "left": 300, "attrs": { "ppm": "400" } },
-    { "type": "wokwi-buzzer", "id": "buzzer", "top": 170, "left": 230, "attrs": { "volume": "0.2" } },
-    { "type": "wokwi-rgb-led", "id": "rgb", "top": -110, "left": -150, "attrs": { "common": "cathode" } },
-    { "type": "wokwi-resistor", "id": "r-red", "top": 10, "left": -190, "rotate": 90, "attrs": { "value": "220" } },
-    { "type": "wokwi-resistor", "id": "r-green", "top": 10, "left": -150, "rotate": 90, "attrs": { "value": "220" } },
-    { "type": "wokwi-resistor", "id": "r-blue", "top": 10, "left": -110, "rotate": 90, "attrs": { "value": "220" } }
+    { "type": "wokwi-pir-motion-sensor", "id": "pir", "top": -10, "left": 210, "attrs": {} },
+    { "type": "wokwi-gas-sensor", "id": "gas", "top": 120, "left": 220, "attrs": { "ppm": "400" } },
+    { "type": "wokwi-buzzer", "id": "buzzer", "top": 235, "left": 235, "attrs": { "volume": "0.2" } },
+    { "type": "wokwi-rgb-led", "id": "rgb", "top": 10, "left": -165, "attrs": { "common": "cathode" } },
+    { "type": "wokwi-resistor", "id": "r-red", "top": 100, "left": -205, "rotate": 90, "attrs": { "value": "220" } },
+    { "type": "wokwi-resistor", "id": "r-green", "top": 100, "left": -165, "rotate": 90, "attrs": { "value": "220" } },
+    { "type": "wokwi-resistor", "id": "r-blue", "top": 100, "left": -125, "rotate": 90, "attrs": { "value": "220" } }
   ],
   "connections": [
     [ "esp:TX0", "$serialMonitor:RX", "", [] ],
