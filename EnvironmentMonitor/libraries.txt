@@ -1,0 +1,6 @@
+# Wokwi Library List
+# See https://docs.wokwi.com/guides/libraries
+# Modest IoT Nano Framework as the professor publishes it on Wokwi, and its dependencies.
+ArduinoJson
+MQTT
+ModestIoT@wokwi:5f66e31943bf9bb37bd3028815df7a1f59589b33

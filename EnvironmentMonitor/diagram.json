@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "author": "IoTech - QualiTrack",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "wokwi-esp32-devkit-v1", "id": "esp", "top": 0, "left": 0, "attrs": {} },
+    { "type": "wokwi-pir-motion-sensor", "id": "pir", "top": -120, "left": 220, "attrs": {} },
+    { "type": "wokwi-gas-sensor", "id": "gas", "top": 40, "left": 300, "attrs": { "ppm": "400" } },
+    { "type": "wokwi-buzzer", "id": "buzzer", "top": 170, "left": 230, "attrs": { "volume": "0.2" } },
+    { "type": "wokwi-rgb-led", "id": "rgb", "top": -110, "left": -150, "attrs": { "common": "cathode" } },
+    { "type": "wokwi-resistor", "id": "r-red", "top": 10, "left": -190, "rotate": 90, "attrs": { "value": "220" } },
+    { "type": "wokwi-resistor", "id": "r-green", "top": 10, "left": -150, "rotate": 90, "attrs": { "value": "220" } },
+    { "type": "wokwi-resistor", "id": "r-blue", "top": 10, "left": -110, "rotate": 90, "attrs": { "value": "220" } }
+  ],
+  "connections": [
+    [ "esp:TX0", "$serialMonitor:RX", "", [] ],
+    [ "esp:RX0", "$serialMonitor:TX", "", [] ],
+    [ "pir:VCC", "esp:3V3", "red", [] ],
+    [ "pir:OUT", "esp:D27", "orange", [] ],
+    [ "pir:GND", "esp:GND.1", "black", [] ],
+    [ "gas:VCC", "esp:3V3", "red", [] ],
+    [ "gas:AOUT", "esp:D34", "purple", [] ],
+    [ "gas:GND", "esp:GND.1", "black", [] ],
+    [ "buzzer:2", "esp:D25", "green", [] ],
+    [ "buzzer:1", "esp:GND.2", "black", [] ],
+    [ "rgb:R", "r-red:1", "red", [] ],
+    [ "r-red:2", "esp:D4", "red", [] ],
+    [ "rgb:G", "r-green:1", "green", [] ],
+    [ "r-green:2", "esp:RX2", "green", [] ],
+    [ "rgb:B", "r-blue:1", "blue", [] ],
+    [ "r-blue:2", "esp:TX2", "blue", [] ],
+    [ "rgb:COM", "esp:GND.2", "black", [] ]
+  ],
+  "dependencies": {}
+}
