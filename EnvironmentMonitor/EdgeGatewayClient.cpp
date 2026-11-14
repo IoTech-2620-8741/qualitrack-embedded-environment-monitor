@@ -7,7 +7,6 @@
 #include <WiFi.h>
 #include "EdgeTelemetryPackage.h"
 #include "NodeLog.h"
-#include "TimeSynchronizationDriver.h"
 
 namespace {
     constexpr const char* LOG_TAG = "EdgeGateway";

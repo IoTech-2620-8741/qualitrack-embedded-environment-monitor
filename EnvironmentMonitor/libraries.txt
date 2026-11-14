@@ -1,5 +1,6 @@
 # Wokwi Library List
 # See https://docs.wokwi.com/guides/libraries
-# The Modest IoT Nano Framework v1.0.0 goes into the Wokwi project as source files (see README),
-# because the ModestIoT library published on Wokwi is an older version.
+# The Modest IoT Nano Framework v1.0.0 comes from the Arduino Library Manager, with the libraries it depends on.
 ArduinoJson
+MQTT
+Modest-IoT-Nano-Framework@1.0.0

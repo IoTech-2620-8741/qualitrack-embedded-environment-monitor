@@ -7,7 +7,6 @@
 #include "AirQualityProfileTranslator.h"
 #include "EnvironmentReadingPackage.h"
 #include "NodeLog.h"
-#include "TimeSynchronizationDriver.h"
 
 namespace {
     constexpr const char* LOG_TAG = "EnvironmentMonitor";
