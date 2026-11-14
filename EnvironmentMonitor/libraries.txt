@@ -1,12 +1,5 @@
 # Wokwi Library List
 # See https://docs.wokwi.com/guides/libraries
-# Modest IoT Nano Framework as the professor publishes it on Wokwi, with the libraries it includes.
+# The Modest IoT Nano Framework v1.0.0 goes into the Wokwi project as source files (see README),
+# because the ModestIoT library published on Wokwi is an older version.
 ArduinoJson
-PubSubClient
-ESP32Servo
-LiquidCrystal I2C
-DHT sensor library
-Adafruit Unified Sensor
-EspSoftwareSerial
-HX711
-ModestIoT@wokwi:5f66e31943bf9bb37bd3028815df7a1f59589b33
