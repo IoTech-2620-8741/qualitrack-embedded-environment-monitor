@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-15
+
 ### Changed
 
 - The node is one sketch, `EnvironmentMonitor.ino`, as in the examples of the Modest IoT Nano Framework: it writes only
@@ -14,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   framework. It opens in the Arduino IDE with the framework installed from the Library Manager (#3).
 
 - The node reaches the Edge with the framework's `HttpGatewayClient` and sends its API key as
-  `Authorization: Bearer <key>`, which the Edge accepts since its ADR-0018. The configuration of the Edge reaches the
+  `Authorization: Bearer <key>`, which the Edge accepts since v0.4.0 (its ADR-0018). The configuration of the Edge reaches the
   sampler task through `enqueueCommand()` (#3).
 
 ### Removed
