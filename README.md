@@ -40,31 +40,46 @@ Wokwi simulates it).
 
 ## Firmware
 
+The whole node is one sketch, as in the examples of the framework:
+
 | File | Role |
 |------|------|
-| `EnvironmentMonitor.ino` | Pins of the circuit; creates the Wi-Fi driver, the Edge gateway and the device |
-| `EnvironmentMonitorDevice` | `Device` mediator: owns the sensors and actuators, reacts to their events and to its own scheduled events |
-| `AirQualityProfile` | Thresholds and version of the profile; classifies like the cloud, with a 20 ppm hysteresis to leave a state |
-| `AirQualityProfileTranslator` | Reads the `AIR_QUALITY` thresholds of the configuration the Edge returns |
-| `EdgeTelemetryPackage`, `EnvironmentReadingPackage` | Telemetry packages with the fields of the Edge API (`measured_at` in UTC) |
-| `EdgeGatewayClient` | `GatewayClient` for the Edge API: `X-API-Key` header, NTP clock, sign-in check and profile refresh |
-| `NodeLog.h` | Messages of the node on the serial monitor |
+| `EnvironmentMonitor.ino` | The node: pins, the `EnvironmentReading` telemetry package and the `EnvironmentMonitor` device |
 | `secrets.example.h` | Settings of the node; copy it as `secrets.h` (ignored by Git) with the real values |
-| `diagram.json`, `libraries.txt` | Circuit and libraries of the Wokwi project |
+| `diagram.json`, `libraries.txt` | Circuit and libraries of the Wokwi project (the Arduino IDE ignores them) |
+
+The sketch writes only what the framework asks an application to write: `EnvironmentReading` (a `TelemetryPackage`
+with the fields of the Edge) and `EnvironmentMonitor` (a `Device` that reacts to the events of its sensors). The rest
+comes from the framework: `GasSensor`, `PassiveInfraredSensor`, `RgbLed`, `Buzzer`, `WiFiConnectivityDriver`,
+`TimeSynchronizationDriver` and `HttpGatewayClient`. The configuration read from the Edge on the network task reaches
+the sampler task through `enqueueCommand()`.
 
 The node classifies a reading with the rule of the cloud: a value above the critical maximum is CRITICAL, above the
-normal maximum WARNING, and NORMAL otherwise. It sends readings only once its clock is synchronized with NTP, because
-the Edge needs the time of each observation.
+normal maximum WARNING, and NORMAL otherwise, with a 20 ppm margin to leave a state. It sends readings only once its
+clock is synchronized with NTP, because the Edge needs the time of each observation.
 
 Notes on the framework v1.0.0:
 
+- `HttpGatewayClient::sendTelemetryRecord()` adds the `timestamp` and `sequence` of the framework, which the Edge
+  rejects, so the node posts the JSON of each reading with `sendRequest()`. The client sends only the `Authorization`
+  header, so the API key goes as a Bearer token, which the Edge accepts since ADR-0018.
 - The `GasSensor` raises `DATA_READ` only when Rs/R0 changes by more than 0.05 (an absolute step, about a fifth of the
   ppm value near 800 ppm). The device takes R0 from the sample that ends the calibration and classifies the latest
   sample every second with the MQ-135 curve, so it does not miss a change of state.
 - On the ESP32 the `MODEST_LOG_*` macros go to the ESP-IDF log, which prints nothing at the default debug level, so
-  the node writes its messages to `Serial` (`NodeLog.h`). Define `NODE_LOG_DEBUG` to also print the requests sent.
+  the node writes its messages with `Serial`, as the examples of the framework do.
+
+## Build with the Arduino IDE
+
+1. Install the ESP32 core (Espressif, 3.x) and, in the Library Manager, `Modest-IoT-Nano-Framework` 1.0.0, which
+   also installs ArduinoJson and MQTT.
+2. Copy `EnvironmentMonitor/secrets.example.h` as `EnvironmentMonitor/secrets.h` and set the Wi-Fi network, the URL
+   of the Edge, the identifier of the node and its API key.
+3. Open `EnvironmentMonitor/EnvironmentMonitor.ino`, choose the board "ESP32 Dev Module" and upload it.
 
 ## Build with arduino-cli
+
+The same steps from a terminal:
 
 1. Install the ESP32 core and the framework v1.0.0 from the Arduino Library Manager, which also installs the
    libraries it depends on (ArduinoJson and MQTT):
@@ -95,11 +110,9 @@ library published on Wokwi (`ModestIoT@wokwi:...`) is an older version of the fr
 with the MQTT client on PubSubClient, so the sketch does not use it.
 
 1. Create a new ESP32 project in Wokwi.
-2. Paste `EnvironmentMonitor.ino` into `sketch.ino`, and `diagram.json` and `libraries.txt` into the files of the same
-   name.
-3. Add the other `.h` and `.cpp` files of `EnvironmentMonitor/` (without `secrets.h`, so the sketch takes
-   `secrets.example.h`).
-4. Start the simulation. The first build compiles the whole framework and takes about two minutes.
+2. Paste `EnvironmentMonitor.ino` into `sketch.ino`, `diagram.json` and `libraries.txt` into the files of the same
+   name, and add `secrets.example.h` (without `secrets.h`, the sketch takes it).
+3. Start the simulation. The first build compiles the whole framework and takes about two minutes.
 
 What to expect:
 
@@ -116,11 +129,11 @@ What to expect:
 
 The node talks to the QualiTrack Edge Service (`http://<local station>:5000`) over the local network with JSON over
 HTTP. It sends its `device_id` (the identifier registered in QualiTrack, for example `ENV-001`) in the body or the path
-and the API key the Edge issued for it in the `X-API-Key` header.
+and the API key the Edge issued for it as a Bearer token: `Authorization: Bearer <api key>` (the Edge also accepts it
+in `X-API-Key`).
 
 | Endpoint | Use |
 |----------|-----|
-| `GET /api/v1/health` | Check that the Edge is reachable (no API key) |
 | `POST /api/v1/auth/sign-in` | Check the identifier and the API key of the node |
 | `POST /api/v1/monitoring/environment-readings` | Send the air quality or the motion measured at one moment |
 | `GET /api/v1/configurations/{deviceId}` | Read the thresholds and the version of the environmental profile |

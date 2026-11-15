@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The node is one sketch, `EnvironmentMonitor.ino`, as in the examples of the Modest IoT Nano Framework: it writes only
+  the `EnvironmentReading` telemetry package and the `EnvironmentMonitor` device, and takes the rest from the
+  framework. It opens in the Arduino IDE with the framework installed from the Library Manager (#3).
+
+- The node reaches the Edge with the framework's `HttpGatewayClient` and sends its API key as
+  `Authorization: Bearer <key>`, which the Edge accepts since its ADR-0018. The configuration of the Edge reaches the
+  sampler task through `enqueueCommand()` (#3).
+
+### Removed
+
+- The node's own profile, translator, telemetry packages, gateway client, device and log files (13 files), replaced by
+  the sketch and the classes of the framework; the behavior of the node does not change. The node no longer calls
+  `GET /api/v1/health`: the sign-in tells whether the Edge answers (#3).
+
 ## [0.2.0] - 2026-11-14
 
 ### Changed
