@@ -41,12 +41,26 @@ void aChangeOfStateIsSentAtOnce() {
     assert(std::fabs(reading["air_quality"].as<float>() - 900.0f) < 3.0f);
 }
 
-/** @brief MS05: with no change of state, the air quality is sent once a minute. */
+/**
+ * @brief MS05: with no change of state, the air quality is sent once a minute, not sooner.
+ *
+ * The minute is counted by the sampler's scheduler, not from the last reading: it fires the report first on its first
+ * tick (100 ms, before the calibration ends, so nothing is sent) and then every 60 s, so the readings fall at 60.1 s
+ * and 120.1 s of node time. Two periods are checked so that an interval that divides 60 s also fails.
+ */
 void theAirQualityIsSentEveryMinute() {
     EnvironmentMonitorHarness harness;
-    harness.calibrateInCleanAir();
+    harness.calibrateInCleanAir(); // Node time 31 s.
     harness.takeSentReadings();
-    harness.advanceMilliseconds(60000);
+
+    harness.advanceMilliseconds(29000); // 60.0 s.
+    assert(harness.takeSentReadings().empty());
+    harness.advanceMilliseconds(100); // 60.1 s.
+    assert(harness.takeSentReadings().size() == 1);
+
+    harness.advanceMilliseconds(59900); // 120.0 s.
+    assert(harness.takeSentReadings().empty());
+    harness.advanceMilliseconds(100); // 120.1 s.
     assert(harness.takeSentReadings().size() == 1);
 }
 
