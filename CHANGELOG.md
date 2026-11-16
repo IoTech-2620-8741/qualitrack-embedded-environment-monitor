@@ -7,12 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-15
+
 ### Added
 
 - Host tests that compile the sketch with the fakes of the Modest IoT Nano Framework v1.0.0 and cover MS01–MS05, MS14
-  and MS15 (`tests/run_all.sh`).
+  and MS15 (`tests/run_all.sh`) (#4).
 
-- GitHub Actions workflow that runs the host tests and compiles the sketch for the ESP32 DevKit v1.
+- GitHub Actions workflow that runs the host tests and compiles the sketch for the ESP32 DevKit v1 (#4).
 
 ## [0.3.0] - 2026-11-15
 
