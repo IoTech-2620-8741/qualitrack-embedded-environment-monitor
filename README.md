@@ -110,8 +110,9 @@ library published on Wokwi (`ModestIoT@wokwi:...`) is an older version of the fr
 with the MQTT client on PubSubClient, so the sketch does not use it.
 
 1. Create a new ESP32 project in Wokwi.
-2. Paste `EnvironmentMonitor.ino` into `sketch.ino`, `diagram.json` and `libraries.txt` into the files of the same
-   name, and add `secrets.example.h` (without `secrets.h`, the sketch takes it).
+2. Rename `sketch.ino` to `EnvironmentMonitor.ino`, as in the published project, paste `EnvironmentMonitor.ino`,
+   `diagram.json` and `libraries.txt` into the files of the same name, and add `secrets.example.h` (without
+   `secrets.h`, the sketch takes it).
 3. Start the simulation. The first build compiles the whole framework and takes about two minutes.
 
 What to expect:
