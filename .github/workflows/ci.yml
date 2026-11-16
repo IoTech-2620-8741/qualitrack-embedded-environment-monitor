@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  host-tests:
+    name: Host tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Downloads the Modest IoT Nano Framework v1.0.0 and ArduinoJson 7.4.3, then builds and runs every suite.
+      - name: Run the host tests
+        run: tests/run_all.sh
+
+  compile:
+    name: Compile for the ESP32 DevKit v1
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install arduino-cli
+        uses: arduino/setup-arduino-cli@v2
+
+      - name: Install the ESP32 core
+        run: |
+          arduino-cli core update-index
+          arduino-cli core install esp32:esp32
+
+      # Also installs ArduinoJson and MQTT, the libraries the framework depends on.
+      - name: Install the Modest IoT Nano Framework
+        run: arduino-cli lib install "Modest-IoT-Nano-Framework@1.0.0"
+
+      # Without secrets.h (ignored by Git) the sketch takes secrets.example.h.
+      - name: Compile the sketch
+        run: arduino-cli compile --fqbn esp32:esp32:esp32 EnvironmentMonitor

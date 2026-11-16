@@ -125,6 +125,30 @@ What to expect:
   with status -1 unless the Edge has a public address.
 - Keep the browser tab in front: a hidden tab slows the simulation to about 1 % of real time.
 
+## Tests
+
+The host tests compile the real `EnvironmentMonitor.ino`, unchanged, on a computer, with the classes of the Modest IoT
+Nano Framework v1.0.0 and its host fakes. The framework tests each of its classes alone, so its fakes do not run
+FreeRTOS; `tests/fakes` adds what a whole sketch needs: working queues, tasks and timer, `Serial`, and an NTP clock the
+tests control. The tests check what the node does from the outside: the LED, the buzzer, the readings it queues and the
+requests it sends to the Edge.
+
+| Suite | Stories | What it checks |
+|-------|---------|----------------|
+| `tests/AirQualityAlarm` | MS01, MS03, MS04 | Calibration, states, the 20 ppm margin, LED colors and beeps |
+| `tests/EdgeReadings` | MS02, MS05 | JSON of the readings, when they are sent, motion, NTP clock, posting and 401 |
+| `tests/EdgeConfiguration` | MS14, MS15 | Bearer key, sign-in, valid and invalid profiles, retry intervals |
+
+Run them from the root of the repository; they need g++ with C++17, git and curl:
+
+```bash
+tests/run_all.sh
+```
+
+The first run downloads the framework v1.0.0 and ArduinoJson 7.4.3 into `build/test-dependencies/`. The tests run with
+AddressSanitizer and UndefinedBehaviorSanitizer, which `ENABLE_SANITIZERS=0 tests/run_all.sh` turns off. Like the
+sketch, they take `secrets.h` when it exists and `secrets.example.h` otherwise.
+
 ## Contract with the Edge API
 
 The node talks to the QualiTrack Edge Service (`http://<local station>:5000`) over the local network with JSON over
@@ -163,6 +187,9 @@ arduino-cli and simulated in Wokwi.
 
 The repository follows GitFlow: `main` keeps the released versions, `develop` integrates the work, and each change is
 made in a `feature/*` branch created from `develop`. Commit messages follow Conventional Commits.
+
+The GitHub Actions workflow `.github/workflows/ci.yml` runs the host tests and compiles the sketch for the ESP32 DevKit v1
+on every push and pull request to `main` and `develop`.
 
 ## Changelog and License
 
