@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Light sensor BH1750 (GY-302) on the I2C bus (GPIO 21 / 22, address 0x23), read once per second with the framework's
+  `DigitalLightIntensitySensor`. The node sends the average of the last 10 samples as `luminosity` in the same reading
+  as the air quality. A BH1750 that fails or is missing only stops the luminosity; the node sets it up again every
+  minute.
+
+- Motion watch driven by the light: with the lights on (50 lux or more) the PIR is ignored; in the dark a motion is
+  sent to the Edge and beeps once. Without a working BH1750 the PIR stays armed.
+
+- BH1750 in the Wokwi circuit (`diagram.json`) with the custom chip `wokwi/bh1750.chip.*` of the Container Monitor.
+
+- Host tests of the light sensor (`tests/LightSensor`).
+
+### Changed
+
+- Motion is sent only while the room is dark (see the motion watch); before, every motion change was sent.
+
+- The readings of the air quality also carry `luminosity`, which needs the Edge Service version that accepts it from
+  an Environment Monitor.
+
 ## [1.0.0] - 2026-11-15
 
 First stable version of the Embedded Application of the Environment Monitor, with the same behavior as 0.4.0. From
