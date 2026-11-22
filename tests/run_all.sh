@@ -48,7 +48,8 @@ INCLUDE_FLAGS=(-include Arduino.h -Itests/fakes "-I${ARDUINOJSON_DIR}" "-I${FRAM
 
 # The framework classes the sketch uses; TimeSynchronizationDriver.cpp is replaced by the fake clock.
 SHARED_SOURCES=()
-for framework_source in Device SamplingScheduler Sensor Actuator GasSensor PassiveInfraredSensor RgbLed Buzzer \
+for framework_source in Device SamplingScheduler Sensor Actuator GasSensor DigitalLightIntensitySensor \
+                        PassiveInfraredSensor RgbLed Buzzer \
                         WiFiConnectivityDriver HttpGatewayClient; do
     SHARED_SOURCES+=("${FRAMEWORK_DIR}/src/${framework_source}.cpp")
 done
