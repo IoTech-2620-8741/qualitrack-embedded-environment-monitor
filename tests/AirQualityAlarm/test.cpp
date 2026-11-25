@@ -84,6 +84,129 @@ void returningToNormalSilencesTheBuzzer() {
     assert(fakeNoToneCalled);
 }
 
+
+/** @brief A fault in the MQ-135 turns the RGB LED purple. */
+void sensorFaultTurnsTheLedPurple() {
+    EnvironmentMonitorHarness harness;
+    harness.calibrateInCleanAir();
+
+    assert(harness.ledColor() == LedColor::Green);
+
+    harness.monitor().on(
+        Event{Sensor::SENSOR_FAULT_EVENT_IDENTIFIER, AIR_QUALITY_PIN}
+    );
+
+    assert(harness.ledColor() == LedColor::Purple);
+    assert(harness.logged("MQ-135 fault"));
+}
+
+
+/** @brief Air quality evaluation resumes after sensor recovery. */
+void sensorRecoveryResumesAirQualityEvaluation() {
+    EnvironmentMonitorHarness harness;
+    harness.calibrateInCleanAir();
+
+    harness.monitor().on(
+        Event{Sensor::SENSOR_FAULT_EVENT_IDENTIFIER, AIR_QUALITY_PIN}
+    );
+
+    harness.setAirQualityInPpm(1200);
+    harness.advanceMilliseconds(1000);
+
+    assert(harness.ledColor() == LedColor::Purple);
+
+    harness.monitor().on(
+        Event{Sensor::SENSOR_RECOVERED_EVENT_IDENTIFIER, AIR_QUALITY_PIN}
+    );
+
+    assert(harness.ledColor() == LedColor::Green);
+    assert(harness.logged("MQ-135 recovered"));
+
+    harness.advanceMilliseconds(1000);
+
+    assert(harness.ledColor() == LedColor::Red);
+}
+
+/** @brief An MQ-135 fault stops the critical alarm. */
+void sensorFaultStopsTheCriticalAlarm() {
+    EnvironmentMonitorHarness harness;
+    harness.calibrateInCleanAir();
+
+    harness.setAirQualityInPpm(1200);
+    harness.advanceMilliseconds(1000);
+
+    assert(harness.ledColor() == LedColor::Red);
+    assert(fakeToneCalled);
+
+    // Simulate an MQ-135 fault.
+    fakeNoToneCalled = false;
+
+    harness.monitor().on(
+        Event{Sensor::SENSOR_FAULT_EVENT_IDENTIFIER, AIR_QUALITY_PIN}
+    );
+
+    assert(harness.ledColor() == LedColor::Purple);
+    assert(fakeNoToneCalled);
+
+    // No additional critical alarms while the sensor is faulted.
+    fakeToneCalled = false;
+    harness.advanceMilliseconds(4000);
+
+    assert(!fakeToneCalled);
+}
+
+
+/** @brief Critical alarms resume after MQ-135 recovery. */
+void sensorRecoveryResumesTheCriticalAlarm() {
+    EnvironmentMonitorHarness harness;
+    harness.calibrateInCleanAir();
+
+    harness.setAirQualityInPpm(1200);
+    harness.advanceMilliseconds(1000);
+
+    assert(harness.ledColor() == LedColor::Red);
+
+    harness.monitor().on(
+        Event{Sensor::SENSOR_FAULT_EVENT_IDENTIFIER, AIR_QUALITY_PIN}
+    );
+
+    assert(harness.ledColor() == LedColor::Purple);
+
+    harness.monitor().on(
+        Event{Sensor::SENSOR_RECOVERED_EVENT_IDENTIFIER, AIR_QUALITY_PIN}
+    );
+
+    fakeToneCalled = false;
+    harness.advanceMilliseconds(2000);
+
+    assert(harness.ledColor() == LedColor::Red);
+    assert(fakeToneCalled);
+    assert(fakeToneCall.frequency == 2000);
+}
+
+/** @brief MS04, MS15: a profile update must not activate an alarm during a sensor fault. */
+void profileUpdateDoesNotTriggerAlarmDuringSensorFault() {
+    EnvironmentMonitorHarness harness;
+    harness.calibrateInCleanAir();
+
+    harness.monitor().on(
+        Event{Sensor::SENSOR_FAULT_EVENT_IDENTIFIER, AIR_QUALITY_PIN}
+    );
+
+    fakeToneCalled = false;
+
+    HTTPClient::setResponse(
+        200,
+        R"({"profile_version":4,"thresholds":[{"metric":"AIR_QUALITY","normal_max":300,"critical_max":350}]})"
+    );
+
+    harness.runNetworkServices();
+
+    assert(harness.logged("Air quality profile version 4 applied"));
+    assert(harness.ledColor() == LedColor::Purple);
+    assert(!fakeToneCalled);
+}
+
 } // namespace
 
 int main() {
@@ -94,5 +217,10 @@ int main() {
     RUN_TEST(criticalTurnsTheLedRedAndBeepsEveryTwoSeconds);
     RUN_TEST(aBetterStateNeedsTwentyPpmOfMargin);
     RUN_TEST(returningToNormalSilencesTheBuzzer);
+    RUN_TEST(sensorFaultTurnsTheLedPurple);
+    RUN_TEST(sensorRecoveryResumesAirQualityEvaluation);
+    RUN_TEST(sensorFaultStopsTheCriticalAlarm);
+    RUN_TEST(sensorRecoveryResumesTheCriticalAlarm);
+    RUN_TEST(profileUpdateDoesNotTriggerAlarmDuringSensorFault);
     return 0;
 }
