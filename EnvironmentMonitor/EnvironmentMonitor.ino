@@ -138,9 +138,9 @@ public:
         // The scheduler only accepts registrations before the engine starts.
         appendSensorToScheduler(&airQualitySensor, Sensor::MEASURE_DATA_REQUESTED_EVENT_IDENTIFIER);
         appendSensorToTriggeringScheduler(&motionSensor, Sensor::MEASURE_DATA_REQUESTED_EVENT_IDENTIFIER, CHANGE);
-        appendSensorToScheduler(this, EVALUATE_EVENT, 1000);       // Classify the latest sample every second.
-        appendSensorToScheduler(this, REPORT_EVENT, 60000);        // Send the air quality every minute.
-        appendSensorToScheduler(this, ALARM_REPEAT_EVENT, 2000);   // Beep every two seconds while CRITICAL.
+        appendSensorToScheduler(this, EVALUATE_EVENT, AIR_QUALITY_EVALUATION_INTERVAL_MS);       // Classify the latest sample every second.
+        appendSensorToScheduler(this, REPORT_EVENT, AIR_QUALITY_REPORT_INTERVAL_MS);        // Send the air quality every minute.
+        appendSensorToScheduler(this, ALARM_REPEAT_EVENT, CRITICAL_ALARM_REPEAT_INTERVAL_MS);   // Beep every two seconds while CRITICAL.
         initializeAsynchronousEngine(QUEUE_LENGTH);
         Serial.println("[EnvironmentMonitor] Calibrating the MQ-135 in clean air for 30 seconds");
     }
@@ -214,13 +214,13 @@ protected:
     void maintainNetworkServices() const override {
         if (!wifi.isConnected()) return;
         const unsigned long now = millis();
-        if (!TimeSynchronizationDriver::isSynchronized() && due(lastClockAttemptAt, now, 30000)) {
+        if (!TimeSynchronizationDriver::isSynchronized() && due(lastClockAttemptAt, now, CLOCK_SYNC_RETRY_INTERVAL_MS)) {
             // The driver marks the clock as synchronized only inside initialize(), so it is retried.
             TimeSynchronizationDriver::initialize(TIME_ZONE, NTP_SERVER);
             if (TimeSynchronizationDriver::isSynchronized()) Serial.println("[EnvironmentMonitor] Clock synchronized");
         }
-        if (!signedIn && due(lastSignInAttemptAt, now, 30000)) signIn();
-        if (due(lastConfigurationAttemptAt, now, configurationRead ? 300000 : 30000)) readConfiguration();
+        if (!signedIn && due(lastSignInAttemptAt, now, SIGN_IN_RETRY_INTERVAL_MS)) signIn();
+        if (due(lastConfigurationAttemptAt, now, configurationRead ? PROFILE_REFRESH_INTERVAL_MS : PROFILE_RETRY_INTERVAL_MS)) readConfiguration();
     }
 
 private:
@@ -239,6 +239,21 @@ private:
     };
 
     static constexpr unsigned long SAMPLER_TICK_IN_MILLISECONDS = 100;
+
+    /** @name Scheduler intervals (milliseconds) */
+    //@{
+    static constexpr unsigned long AIR_QUALITY_EVALUATION_INTERVAL_MS = 1000;
+    static constexpr unsigned long AIR_QUALITY_REPORT_INTERVAL_MS = 60000;
+    static constexpr unsigned long CRITICAL_ALARM_REPEAT_INTERVAL_MS = 2000;
+    //@}
+
+    /** @name Network operation intervals (milliseconds) */
+    //@{
+    static constexpr unsigned long CLOCK_SYNC_RETRY_INTERVAL_MS = 30000;
+    static constexpr unsigned long SIGN_IN_RETRY_INTERVAL_MS = 30000;
+    static constexpr unsigned long PROFILE_RETRY_INTERVAL_MS = 30000;
+    static constexpr unsigned long PROFILE_REFRESH_INTERVAL_MS = 300000;
+    //@}
     static constexpr uint8_t QUEUE_LENGTH = 10;
     static constexpr uint8_t SENSOR_FAULT_THRESHOLD = 3;
     static constexpr float CURVE_SLOPE = -0.36f;    // PPM = 10^((log10(Rs/R0) - 0.94) / -0.36)
