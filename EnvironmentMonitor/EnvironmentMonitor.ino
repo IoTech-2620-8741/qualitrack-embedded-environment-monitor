@@ -154,12 +154,13 @@ public:
             case EVALUATE_EVENT: evaluateAirQuality(); break;
             case REPORT_EVENT: sendAirQuality(); break;
             case ALARM_REPEAT_EVENT:
-                if (calibrated && state == State::Critical) playTone(2000, 500);
+                if (calibrated && !faulted && state == State::Critical) playTone(2000, 500);
                 break;
             case PassiveInfraredSensor::MOTION_DETECTED_EVENT_IDENTIFIER: sendMotion(true); break;
             case PassiveInfraredSensor::MOTION_STOPPED_EVENT_IDENTIFIER: sendMotion(false); break;
             case Sensor::SENSOR_FAULT_EVENT_IDENTIFIER:
                 faulted = true;
+                alarmBuzzer.handle(Buzzer::TURN_OFF_COMMAND);
                 Serial.println("[EnvironmentMonitor] MQ-135 fault");
                 showState();
                 break;
@@ -319,7 +320,8 @@ private:
                       NAMES[static_cast<int>(state)], NAMES[static_cast<int>(next)]);
         state = next;
         showState();
-        if (state == State::Warning) playTone(1000, 200);
+        if (faulted) alarmBuzzer.handle(Buzzer::TURN_OFF_COMMAND);
+        else if (state == State::Warning) playTone(1000, 200);
         else if (state == State::Critical) playTone(2000, 500);
         else alarmBuzzer.handle(Buzzer::TURN_OFF_COMMAND);
         return true;
