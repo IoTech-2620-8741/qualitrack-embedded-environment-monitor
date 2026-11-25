@@ -84,6 +84,48 @@ void returningToNormalSilencesTheBuzzer() {
     assert(fakeNoToneCalled);
 }
 
+
+/** @brief A fault in the MQ-135 turns the RGB LED purple. */
+void sensorFaultTurnsTheLedPurple() {
+    EnvironmentMonitorHarness harness;
+    harness.calibrateInCleanAir();
+
+    assert(harness.ledColor() == LedColor::Green);
+
+    harness.monitor().on(
+        Event{Sensor::SENSOR_FAULT_EVENT_IDENTIFIER, AIR_QUALITY_PIN}
+    );
+
+    assert(harness.ledColor() == LedColor::Purple);
+    assert(harness.logged("MQ-135 fault"));
+}
+
+
+/** @brief Air quality evaluation resumes after sensor recovery. */
+void sensorRecoveryResumesAirQualityEvaluation() {
+    EnvironmentMonitorHarness harness;
+    harness.calibrateInCleanAir();
+
+    harness.monitor().on(
+        Event{Sensor::SENSOR_FAULT_EVENT_IDENTIFIER, AIR_QUALITY_PIN}
+    );
+
+    harness.setAirQualityInPpm(1200);
+    harness.advanceMilliseconds(1000);
+
+    assert(harness.ledColor() == LedColor::Purple);
+
+    harness.monitor().on(
+        Event{Sensor::SENSOR_RECOVERED_EVENT_IDENTIFIER, AIR_QUALITY_PIN}
+    );
+
+    assert(harness.ledColor() == LedColor::Green);
+    assert(harness.logged("MQ-135 recovered"));
+
+    harness.advanceMilliseconds(1000);
+
+    assert(harness.ledColor() == LedColor::Red);
+}
 } // namespace
 
 int main() {
@@ -94,5 +136,7 @@ int main() {
     RUN_TEST(criticalTurnsTheLedRedAndBeepsEveryTwoSeconds);
     RUN_TEST(aBetterStateNeedsTwentyPpmOfMargin);
     RUN_TEST(returningToNormalSilencesTheBuzzer);
+    RUN_TEST(sensorFaultTurnsTheLedPurple);
+    RUN_TEST(sensorRecoveryResumesAirQualityEvaluation);
     return 0;
 }
