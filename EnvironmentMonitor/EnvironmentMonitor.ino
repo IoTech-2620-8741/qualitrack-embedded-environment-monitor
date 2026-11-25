@@ -345,7 +345,7 @@ private:
 
     /** @brief The Edge needs the UTC time of each observation, so readings wait for the NTP clock. */
     void sendAirQuality() {
-        if (!calibrated || !TimeSynchronizationDriver::isSynchronized()) return;
+        if (!calibrated || faulted || !TimeSynchronizationDriver::isSynchronized()) return;
         enqueueTelemetryPayload(EnvironmentReading::airQuality(TimeSynchronizationDriver::getCurrentTimestamp(),
                                                                lastPpm, profile.version));
     }
