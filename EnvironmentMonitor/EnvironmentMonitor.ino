@@ -20,8 +20,9 @@
  * `WiFiConnectivityDriver`, `TimeSynchronizationDriver`, `HttpGatewayClient`). The sketch only adds what the framework
  * asks an application to write: the telemetry package of a reading and the device that reacts to the events.
  *
- * Requirements: ESP32 core 3.x and the library Modest-IoT-Nano-Framework 1.0.0 (Arduino Library Manager, with
- * ArduinoJson and MQTT). Copy secrets.example.h as secrets.h with the values of the node.
+ * Requirements: ESP32 core 3.x or 4.x, and the libraries Modest-IoT-Nano-Framework 1.3.0 (Arduino Library Manager,
+ * with MQTT) and ArduinoJson 7, which reads the profile of the Edge. Copy secrets.example.h as secrets.h with the
+ * values of the node.
  *
  * Circuit of report section 5.6, with an RGB LED instead of the LED ring:
  *
@@ -33,6 +34,7 @@
  * | RGB LED red / green / blue (220 Ω each, common cathode) | GPIO 4 / 16 / 17 |
  */
 #include <ModestIoT.h>
+#include <ArduinoJson.h> // The framework writes the readings; ArduinoJson reads the profile.
 #include <algorithm>
 #include <cmath>
 #include <ctime>
@@ -81,21 +83,21 @@ public:
         return std::unique_ptr<EnvironmentReading>(new EnvironmentReading(observedAt, false, 0, detected, profileVersion));
     }
 
-    void serialize(JsonDocument& json) const override {
+    void write(TelemetryWriter& writer) const override {
         char measuredAt[21];
         const time_t seconds = observedAt;
         tm utc{};
         gmtime_r(&seconds, &utc);
         strftime(measuredAt, sizeof(measuredAt), "%Y-%m-%dT%H:%M:%SZ", &utc);
 
-        json["device_id"] = DEVICE_ID;
-        json["measured_at"] = measuredAt; // A char array is copied into the document.
+        writer.field("device_id", DEVICE_ID);
+        writer.field("measured_at", measuredAt); // The writer copies the text into its buffer.
         if (hasAirQuality) {
-            json["air_quality"] = roundf(airQualityInPpm * 10.0f) / 10.0f; // The MQ-135 ppm is indicative.
+            writer.field("air_quality", roundf(airQualityInPpm * 10.0f) / 10.0f); // The MQ-135 ppm is indicative.
         } else {
-            json["motion"] = motionDetected;
+            writer.field("motion", motionDetected);
         }
-        if (profileVersion != 0) json["profile_version"] = profileVersion;
+        if (profileVersion != 0) writer.field("profile_version", static_cast<int32_t>(profileVersion));
     }
 
 private:
@@ -199,10 +201,11 @@ protected:
     /** @runs_on{network} */
     void processQueuedTelemetryData(const TelemetryPackage* package) const override {
         if (package == nullptr) return;
-        JsonDocument json;
-        package->serialize(json);
-        char body[256];
-        serializeJson(json, body, sizeof(body));
+        // Only the fields of the reading: serializeToBuffer() would add the envelope of the framework.
+        JsonTelemetryWriter writer;
+        package->write(writer);
+        writer.finalize();
+        const char* body = writer.getString();
         edge.setServiceEndpointUrl(readingsUrl);
         if (edge.sendRequest(HttpGatewayClient::HttpMethod::Post, body)) return;
         const int status = edge.getLastResponseStatusCode();
