@@ -64,7 +64,8 @@ clock is synchronized with NTP, because the Edge needs the time of each observat
 
 The BH1750 is read once per second and the node sends the average of its last 10 samples, against the noise of the
 sensor, in the same reading as the air quality. The light does not change the state of the environment or the LED:
-the environmental profile of an environment has thresholds only for the air quality. When the BH1750 fails three
+the node evaluates only the air quality thresholds of its profile. The luminosity thresholds that the environmental
+profile has since the platform 2.1.0 are evaluated with the readings outside the node. When the BH1750 fails three
 reads in a row (or is missing at start-up) the node keeps working and only stops sending the luminosity; it sets the
 sensor up again once a minute and sends the luminosity again once it answers. Likewise, while the MQ-135 is faulted
 the node silences the alarm and sends only the luminosity.
@@ -206,7 +207,7 @@ Example of a reading:
 
 The node sends `air_quality` and `luminosity` (each one when it has it) or `motion` in each reading, and
 `profile_version` once it has a profile of the Edge. The Edge accepts `luminosity` from an Environment Monitor since
-the version that adds it to the environment readings; an older Edge answers `400` to those readings.
+the Edge Service 1.1.0; an older Edge answers `400` to those readings.
 The Edge answers `201` when it stores the readings, `200` for an identical retry, `400` for invalid data, `401` for a
 missing or rejected API key and `409` when a retry changes a stored reading. See the
 [Edge Service](https://github.com/IoTech-2620-8741/qualitrack-edge-service) for the full contract.
