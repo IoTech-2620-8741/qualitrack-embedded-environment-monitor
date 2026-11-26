@@ -8,7 +8,7 @@
 # The first run downloads the pinned framework and ArduinoJson into build/test-dependencies/.
 set -euo pipefail
 
-FRAMEWORK_VERSION="v1.0.0"
+FRAMEWORK_VERSION="v1.3.0"
 ARDUINOJSON_VERSION="v7.4.3"
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -42,14 +42,16 @@ if [[ "${ENABLE_SANITIZERS:-1}" == "1" ]]; then
     # Without -fno-sanitize-recover, undefined behavior is only printed and the test still passes.
     COMPILE_FLAGS+=(-fsanitize=address,undefined -fno-sanitize-recover=undefined)
 fi
-# Order matters: the shim in tests/fakes comes first, and the real ArduinoJson comes before the framework's fake one.
+# Order matters: the shim in tests/fakes comes before the fakes of the framework.
 INCLUDE_FLAGS=(-include Arduino.h -Itests/fakes "-I${ARDUINOJSON_DIR}" "-I${FRAMEWORK_DIR}/tests/fakes"
                "-I${FRAMEWORK_DIR}/src" -IEnvironmentMonitor)
 
 # The framework classes the sketch uses; TimeSynchronizationDriver.cpp is replaced by the fake clock.
 SHARED_SOURCES=()
-for framework_source in Device SamplingScheduler Sensor Actuator GasSensor PassiveInfraredSensor RgbLed Buzzer \
-                        WiFiConnectivityDriver HttpGatewayClient; do
+for framework_source in Device SamplingScheduler Sensor Actuator GasSensor DigitalLightIntensitySensor \
+                        PassiveInfraredSensor RgbLed Buzzer \
+                        WiFiConnectivityDriver HttpGatewayClient JsonTelemetryWriter JsonParser \
+                        DiagnosticsTelemetryPackage; do
     SHARED_SOURCES+=("${FRAMEWORK_DIR}/src/${framework_source}.cpp")
 done
 SHARED_SOURCES+=("${FRAMEWORK_DIR}/tests/fakes/ArduinoFake.cpp" tests/fakes/TimeSynchronizationDriverFake.cpp)

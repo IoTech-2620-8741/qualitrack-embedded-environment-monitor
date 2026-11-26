@@ -1,0 +1,14 @@
+# Wokwi config for the local simulator (CLion / VS Code / wokwi-cli).
+# Paths are relative to this file.
+# 1. Build the firmware:  arduino-cli compile --fqbn esp32:esp32:esp32 EnvironmentMonitor --output-dir build/wokwi
+# 2. Build the BH1750 chip: wokwi-cli chip compile wokwi/bh1750.chip.c -o wokwi/bh1750.chip.wasm
+# In the Wokwi panel of CLion, set the diagram.json path to EnvironmentMonitor/diagram.json
+
+[wokwi]
+version = 1
+firmware = "build/wokwi/EnvironmentMonitor.ino.merged.bin"
+elf = "build/wokwi/EnvironmentMonitor.ino.elf"
+
+[[chip]]
+name = "bh1750"
+binary = "wokwi/bh1750.chip.wasm"

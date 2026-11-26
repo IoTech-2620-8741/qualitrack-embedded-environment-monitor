@@ -3,8 +3,9 @@
  * @brief Embedded Application of the QualiTrack Environment Monitor (ESP32 DevKit v1) on the Modest IoT Nano Framework.
  *
  * One Environment Monitor watches each environment of a pharmaceutical facility: it measures the air quality
- * (MQ-135) and detects motion (PIR), shows the state of the environment on an RGB LED, warns with a buzzer, and
- * sends its readings to the QualiTrack Edge Service of the local station, which synchronizes them with the cloud.
+ * (MQ-135) and the light of the room (BH1750), detects motion (PIR), shows the state of the environment on an RGB LED,
+ * warns with a buzzer, and sends its readings to the QualiTrack Edge Service of the local station, which synchronizes
+ * them with the cloud.
  *
  * | Story | Behavior |
  * |-------|----------|
@@ -13,15 +14,18 @@
  * | MS03 | RGB LED: blue calibrating, green NORMAL, yellow WARNING, red CRITICAL, purple sensor fault |
  * | MS04 | One beep on WARNING and a beep every two seconds while CRITICAL |
  * | MS05 | Air quality sent when the state changes and every minute; motion sent on every change |
+ * | Light | Luminosity of the room (BH1750), the moving average of its last 10 samples, sent with the air quality |
+ * | Light | Motion watch: with the lights on (50 lux or more) the PIR is ignored; in the dark a motion is sent and beeps |
  * | MS14 | Sign-in with the identifier and the API key of the node |
  * | MS15 | Air quality profile read from the Edge every five minutes and applied |
  *
- * Everything comes from the framework (`GasSensor`, `PassiveInfraredSensor`, `RgbLed`, `Buzzer`,
+ * Everything comes from the framework (`GasSensor`, `DigitalLightIntensitySensor`, `PassiveInfraredSensor`, `RgbLed`, `Buzzer`,
  * `WiFiConnectivityDriver`, `TimeSynchronizationDriver`, `HttpGatewayClient`). The sketch only adds what the framework
  * asks an application to write: the telemetry package of a reading and the device that reacts to the events.
  *
- * Requirements: ESP32 core 3.x and the library Modest-IoT-Nano-Framework 1.0.0 (Arduino Library Manager, with
- * ArduinoJson and MQTT). Copy secrets.example.h as secrets.h with the values of the node.
+ * Requirements: ESP32 core 3.x or 4.x, and the libraries Modest-IoT-Nano-Framework 1.3.0 (Arduino Library Manager,
+ * with MQTT) and ArduinoJson 7, which reads the profile of the Edge. Copy secrets.example.h as secrets.h with the
+ * values of the node.
  *
  * Circuit of report section 5.6, with an RGB LED instead of the LED ring:
  *
@@ -31,8 +35,10 @@
  * | MQ-135 analog output (2.2 kΩ / 3.3 kΩ divider) | GPIO 34 |
  * | Buzzer | GPIO 25 |
  * | RGB LED red / green / blue (220 Ω each, common cathode) | GPIO 4 / 16 / 17 |
+ * | BH1750 (GY-302) SDA / SCL, ADDR not connected (address 0x23) | GPIO 21 / 22 |
  */
 #include <ModestIoT.h>
+#include <ArduinoJson.h> // The framework writes the readings; ArduinoJson reads the profile.
 #include <algorithm>
 #include <cmath>
 #include <ctime>
@@ -52,6 +58,8 @@ static constexpr int BUZZER_PIN = 25;
 static constexpr int LED_RED_PIN = 4;
 static constexpr int LED_GREEN_PIN = 16;
 static constexpr int LED_BLUE_PIN = 17;
+// The BH1750 has no signal pin: it is on the I2C bus, on the default pins of the ESP32 (SDA 21, SCL 22). The framework's
+// DigitalLightIntensitySensor starts the bus with Wire.begin() when it is created.
 //@}
 
 /** @name Routes of the QualiTrack Edge API */
@@ -67,45 +75,51 @@ static constexpr unsigned long MAIN_LOOP_DELAY_IN_MILLISECONDS = 60000;
 /**
  * @brief One observation of the environment, in the JSON the Edge expects.
  *
- * It carries the air quality or the motion, the UTC time of the observation and the version of the profile applied.
+ * It carries the air quality and the luminosity (each one only when the node has it), or the motion, with the UTC time
+ * of the observation and the version of the profile applied.
  * It is sent with `HttpGatewayClient::sendRequest()`, because the Edge accepts only its own fields and
  * `sendTelemetryRecord()` would add the `timestamp` and `sequence` of the framework.
  */
 class EnvironmentReading : public TelemetryPackage {
 public:
-    static std::unique_ptr<EnvironmentReading> airQuality(uint32_t observedAt, float ppm, uint32_t profileVersion) {
-        return std::unique_ptr<EnvironmentReading>(new EnvironmentReading(observedAt, true, ppm, false, profileVersion));
+    /** @param ppm Air quality, or NAN without one. @param lux Luminosity, or NAN without one. */
+    static std::unique_ptr<EnvironmentReading> measurements(uint32_t observedAt, float ppm, float lux,
+                                                            uint32_t profileVersion) {
+        return std::unique_ptr<EnvironmentReading>(new EnvironmentReading(observedAt, ppm, lux, false, false, profileVersion));
     }
 
     static std::unique_ptr<EnvironmentReading> motion(uint32_t observedAt, bool detected, uint32_t profileVersion) {
-        return std::unique_ptr<EnvironmentReading>(new EnvironmentReading(observedAt, false, 0, detected, profileVersion));
+        return std::unique_ptr<EnvironmentReading>(new EnvironmentReading(observedAt, NAN, NAN, true, detected, profileVersion));
     }
 
-    void serialize(JsonDocument& json) const override {
+    void write(TelemetryWriter& writer) const override {
         char measuredAt[21];
         const time_t seconds = observedAt;
         tm utc{};
         gmtime_r(&seconds, &utc);
         strftime(measuredAt, sizeof(measuredAt), "%Y-%m-%dT%H:%M:%SZ", &utc);
 
-        json["device_id"] = DEVICE_ID;
-        json["measured_at"] = measuredAt; // A char array is copied into the document.
-        if (hasAirQuality) {
-            json["air_quality"] = roundf(airQualityInPpm * 10.0f) / 10.0f; // The MQ-135 ppm is indicative.
+        writer.field("device_id", DEVICE_ID);
+        writer.field("measured_at", measuredAt); // The writer copies the text into its buffer.
+        if (hasMotion) {
+            writer.field("motion", motionDetected);
         } else {
-            json["motion"] = motionDetected;
+            // The MQ-135 ppm is indicative; the BH1750 resolves about 1 lux. Both go with one decimal.
+            if (!std::isnan(airQualityInPpm)) writer.field("air_quality", roundf(airQualityInPpm * 10.0f) / 10.0f);
+            if (!std::isnan(luminosityInLux)) writer.field("luminosity", roundf(luminosityInLux * 10.0f) / 10.0f);
         }
-        if (profileVersion != 0) json["profile_version"] = profileVersion;
+        if (profileVersion != 0) writer.field("profile_version", static_cast<int32_t>(profileVersion));
     }
 
 private:
-    EnvironmentReading(uint32_t observedAt, bool hasAirQuality, float ppm, bool detected, uint32_t profileVersion)
-        : observedAt(observedAt), hasAirQuality(hasAirQuality), airQualityInPpm(ppm), motionDetected(detected),
-          profileVersion(profileVersion) {}
+    EnvironmentReading(uint32_t observedAt, float ppm, float lux, bool hasMotion, bool detected, uint32_t profileVersion)
+        : observedAt(observedAt), airQualityInPpm(ppm), luminosityInLux(lux), hasMotion(hasMotion),
+          motionDetected(detected), profileVersion(profileVersion) {}
 
     uint32_t observedAt;
-    bool hasAirQuality;
     float airQualityInPpm;
+    float luminosityInLux;
+    bool hasMotion;
     bool motionDetected;
     uint32_t profileVersion;
 };
@@ -119,6 +133,8 @@ public:
         : Device(SAMPLER_TICK_IN_MILLISECONDS),
           motionSensor(MOTION_PIN, this),
           airQualitySensor(AIR_QUALITY_PIN, -1, this, GasSensor::OperatingMode::RawMode),
+          lightSensor(LIGHT_SENSOR_IDENTIFIER, DigitalLightIntensitySensor::DEFAULT_I2C_ADDRESS,
+                      LIGHTS_ON_THRESHOLD_IN_LUX, this),
           alarmBuzzer(BUZZER_PIN, this),
           stateLed(LED_RED_PIN, LED_GREEN_PIN, LED_BLUE_PIN, false, this),
           wifi(wifiDriver),
@@ -133,14 +149,17 @@ public:
         airQualitySensor.setTargetGas(GasSensor::GasType::Benzene);
         airQualitySensor.setFaultThreshold(SENSOR_FAULT_THRESHOLD);
         airQualitySensor.startCalibration(); // R0 is measured in the first 30 seconds: start in clean air.
+        lightSensor.setFaultThreshold(SENSOR_FAULT_THRESHOLD);
+        if (!lightSensor.isInitialized()) Serial.println("[EnvironmentMonitor] BH1750 not found on the I2C bus");
         showColor(RgbLed::BLUE);
 
         // The scheduler only accepts registrations before the engine starts.
         appendSensorToScheduler(&airQualitySensor, Sensor::MEASURE_DATA_REQUESTED_EVENT_IDENTIFIER);
+        appendSensorToScheduler(&lightSensor, Sensor::MEASURE_DATA_REQUESTED_EVENT_IDENTIFIER); // One sample per second.
         appendSensorToTriggeringScheduler(&motionSensor, Sensor::MEASURE_DATA_REQUESTED_EVENT_IDENTIFIER, CHANGE);
-        appendSensorToScheduler(this, EVALUATE_EVENT, 1000);       // Classify the latest sample every second.
-        appendSensorToScheduler(this, REPORT_EVENT, 60000);        // Send the air quality every minute.
-        appendSensorToScheduler(this, ALARM_REPEAT_EVENT, 2000);   // Beep every two seconds while CRITICAL.
+        appendSensorToScheduler(this, EVALUATE_EVENT, AIR_QUALITY_EVALUATION_INTERVAL_MS);       // Classify the latest sample every second.
+        appendSensorToScheduler(this, REPORT_EVENT, AIR_QUALITY_REPORT_INTERVAL_MS);        // Send the air quality and the light every minute.
+        appendSensorToScheduler(this, ALARM_REPEAT_EVENT, CRITICAL_ALARM_REPEAT_INTERVAL_MS);   // Beep every two seconds while CRITICAL.
         initializeAsynchronousEngine(QUEUE_LENGTH);
         Serial.println("[EnvironmentMonitor] Calibrating the MQ-135 in clean air for 30 seconds");
     }
@@ -151,22 +170,27 @@ public:
     void on(Event event) override {
         switch (event.identifier) {
             case Sensor::DATA_READ_EVENT_IDENTIFIER: finishCalibration(); break;
-            case EVALUATE_EVENT: evaluateAirQuality(); break;
-            case REPORT_EVENT: sendAirQuality(); break;
+            case EVALUATE_EVENT:
+                averageLight(lightSensor.hasValidSample() && !lightFaulted ? lightSensor.getIlluminanceInLux() : NAN);
+                evaluateAirQuality();
+                break;
+            case REPORT_EVENT:
+                retryLightSensor();
+                sendMeasurements();
+                break;
             case ALARM_REPEAT_EVENT:
-                if (calibrated && state == State::Critical) playTone(2000, 500);
+                if (calibrated && !faulted && state == State::Critical) playTone(2000, 500);
                 break;
-            case PassiveInfraredSensor::MOTION_DETECTED_EVENT_IDENTIFIER: sendMotion(true); break;
-            case PassiveInfraredSensor::MOTION_STOPPED_EVENT_IDENTIFIER: sendMotion(false); break;
-            case Sensor::SENSOR_FAULT_EVENT_IDENTIFIER:
-                faulted = true;
-                Serial.println("[EnvironmentMonitor] MQ-135 fault");
-                showState();
-                break;
-            case Sensor::SENSOR_RECOVERED_EVENT_IDENTIFIER:
-                faulted = false;
-                Serial.println("[EnvironmentMonitor] MQ-135 recovered");
-                showState();
+            case PassiveInfraredSensor::MOTION_DETECTED_EVENT_IDENTIFIER: onMotion(true); break;
+            case PassiveInfraredSensor::MOTION_STOPPED_EVENT_IDENTIFIER: onMotion(false); break;
+            case Sensor::SENSOR_FAULT_EVENT_IDENTIFIER: onSensorFault(event.sourceId, true); break;
+            case Sensor::SENSOR_RECOVERED_EVENT_IDENTIFIER: onSensorFault(event.sourceId, false); break;
+            case DigitalLightIntensitySensor::LIGHT_DETECTED_EVENT_IDENTIFIER:
+            case DigitalLightIntensitySensor::LIGHT_ABSENT_EVENT_IDENTIFIER:
+                // The BH1750 raises one of these on its first sample after a set-up. The framework 1.3.0 replaces its
+                // SENSOR_RECOVERED event with them, so a sample after a fault is the recovery.
+                if (lightFaulted) onSensorFault(LIGHT_SENSOR_IDENTIFIER, false);
+                armMotionWatch(event.identifier == DigitalLightIntensitySensor::LIGHT_ABSENT_EVENT_IDENTIFIER);
                 break;
             default: break;
         }
@@ -188,7 +212,7 @@ public:
                 profile = pending;
                 Serial.printf("[EnvironmentMonitor] Air quality profile version %lu applied\n",
                               static_cast<unsigned long>(profile.version));
-                if (calibrated && changeState(profile.classify(lastPpm))) sendAirQuality();
+                if (calibrated && changeState(profile.classify(lastPpm))) sendMeasurements();
                 break;
             default: break;
         }
@@ -198,10 +222,11 @@ protected:
     /** @runs_on{network} */
     void processQueuedTelemetryData(const TelemetryPackage* package) const override {
         if (package == nullptr) return;
-        JsonDocument json;
-        package->serialize(json);
-        char body[256];
-        serializeJson(json, body, sizeof(body));
+        // Only the fields of the reading: serializeToBuffer() would add the envelope of the framework.
+        JsonTelemetryWriter writer;
+        package->write(writer);
+        writer.finalize();
+        const char* body = writer.getString();
         edge.setServiceEndpointUrl(readingsUrl);
         if (edge.sendRequest(HttpGatewayClient::HttpMethod::Post, body)) return;
         const int status = edge.getLastResponseStatusCode();
@@ -213,13 +238,13 @@ protected:
     void maintainNetworkServices() const override {
         if (!wifi.isConnected()) return;
         const unsigned long now = millis();
-        if (!TimeSynchronizationDriver::isSynchronized() && due(lastClockAttemptAt, now, 30000)) {
+        if (!TimeSynchronizationDriver::isSynchronized() && due(lastClockAttemptAt, now, CLOCK_SYNC_RETRY_INTERVAL_MS)) {
             // The driver marks the clock as synchronized only inside initialize(), so it is retried.
             TimeSynchronizationDriver::initialize(TIME_ZONE, NTP_SERVER);
             if (TimeSynchronizationDriver::isSynchronized()) Serial.println("[EnvironmentMonitor] Clock synchronized");
         }
-        if (!signedIn && due(lastSignInAttemptAt, now, 30000)) signIn();
-        if (due(lastConfigurationAttemptAt, now, configurationRead ? 300000 : 30000)) readConfiguration();
+        if (!signedIn && due(lastSignInAttemptAt, now, SIGN_IN_RETRY_INTERVAL_MS)) signIn();
+        if (due(lastConfigurationAttemptAt, now, configurationRead ? PROFILE_REFRESH_INTERVAL_MS : PROFILE_RETRY_INTERVAL_MS)) readConfiguration();
     }
 
 private:
@@ -238,11 +263,29 @@ private:
     };
 
     static constexpr unsigned long SAMPLER_TICK_IN_MILLISECONDS = 100;
+
+    /** @name Scheduler intervals (milliseconds) */
+    //@{
+    static constexpr unsigned long AIR_QUALITY_EVALUATION_INTERVAL_MS = 1000;
+    static constexpr unsigned long AIR_QUALITY_REPORT_INTERVAL_MS = 60000;
+    static constexpr unsigned long CRITICAL_ALARM_REPEAT_INTERVAL_MS = 2000;
+    //@}
+
+    /** @name Network operation intervals (milliseconds) */
+    //@{
+    static constexpr unsigned long CLOCK_SYNC_RETRY_INTERVAL_MS = 30000;
+    static constexpr unsigned long SIGN_IN_RETRY_INTERVAL_MS = 30000;
+    static constexpr unsigned long PROFILE_RETRY_INTERVAL_MS = 30000;
+    static constexpr unsigned long PROFILE_REFRESH_INTERVAL_MS = 300000;
+    //@}
     static constexpr uint8_t QUEUE_LENGTH = 10;
     static constexpr uint8_t SENSOR_FAULT_THRESHOLD = 3;
     static constexpr float CURVE_SLOPE = -0.36f;    // PPM = 10^((log10(Rs/R0) - 0.94) / -0.36)
     static constexpr float CURVE_INTERCEPT = 0.94f;
     static constexpr float HYSTERESIS_IN_PPM = 20;  // Margin to leave a state, so the alarm does not flicker.
+    static constexpr int LIGHT_SENSOR_IDENTIFIER = 0x23; // Source of the BH1750 events (it has no signal pin).
+    static constexpr size_t LIGHT_AVERAGE_WINDOW = 10;   // Light samples in the moving average, one per second.
+    static constexpr float LIGHTS_ON_THRESHOLD_IN_LUX = 50; // From this light on the room is lit and the PIR is ignored.
     static constexpr int EVALUATE_EVENT = 1000, REPORT_EVENT = 1001, ALARM_REPEAT_EVENT = 1002;
     static constexpr int SET_NORMAL_MINIMUM = 2000, SET_NORMAL_MAXIMUM = 2001, SET_CRITICAL_MINIMUM = 2002,
                          SET_CRITICAL_MAXIMUM = 2003, APPLY_PROFILE = 2004;
@@ -250,6 +293,7 @@ private:
 
     PassiveInfraredSensor motionSensor;
     GasSensor airQualitySensor;
+    DigitalLightIntensitySensor lightSensor;
     Buzzer alarmBuzzer;
     RgbLed stateLed;
     WiFiConnectivityDriver& wifi;
@@ -259,8 +303,11 @@ private:
     // Sampler task state.
     Profile profile, pending;
     State state = State::Normal;
-    bool calibrated = false, faulted = false;
-    float cleanAirResistance = 0, lastPpm = 0;
+    bool calibrated = false, faulted = false, lightFaulted = false;
+    bool motionWatchArmed = true; // Armed until the BH1750 sees the lights on, and whenever it cannot see.
+    float cleanAirResistance = 0, lastPpm = 0, lastLux = NAN;
+    float lightSamples[LIGHT_AVERAGE_WINDOW]{};
+    size_t lightSampleCount = 0, nextLightSample = 0;
 
     // Network task state (its hooks are const in the framework).
     mutable bool signedIn = false, configurationRead = false;
@@ -284,7 +331,7 @@ private:
         Serial.printf("[EnvironmentMonitor] MQ-135 calibrated: %.1f ppm\n", lastPpm);
         changeState(profile.classify(lastPpm));
         showState();
-        sendAirQuality();
+        sendMeasurements();
     }
 
     /**
@@ -309,7 +356,53 @@ private:
                                               profile.classify(ppm + HYSTERESIS_IN_PPM));
             next = std::min(state, std::max(next, withMargin));
         }
-        if (changeState(next)) sendAirQuality(); // The Edge learns about the change at once.
+        if (changeState(next)) sendMeasurements(); // The Edge learns about the change at once.
+    }
+
+    /**
+     * @brief Keeps the moving average of the last 10 light samples, one per second, against the noise of the BH1750.
+     * @param lux The latest sample, or NAN without one (the average starts again and no luminosity is sent).
+     */
+    void averageLight(float lux) {
+        if (std::isnan(lux)) {
+            lightSampleCount = nextLightSample = 0;
+            lastLux = NAN;
+            return;
+        }
+        lightSamples[nextLightSample] = lux;
+        nextLightSample = (nextLightSample + 1) % LIGHT_AVERAGE_WINDOW;
+        if (lightSampleCount < LIGHT_AVERAGE_WINDOW) lightSampleCount++;
+        float sum = 0;
+        for (size_t i = 0; i < lightSampleCount; i++) sum += lightSamples[i];
+        lastLux = sum / lightSampleCount;
+    }
+
+    /**
+     * @brief Sets the BH1750 up again, once a minute, while it is not answering. A sensor that was missing at start-up
+     * never reads, so it would never raise the fault or the recovery events by itself.
+     */
+    void retryLightSensor() {
+        if (lightSensor.isInitialized()) return;
+        if (lightSensor.initialize()) Serial.println("[EnvironmentMonitor] BH1750 found on the I2C bus");
+    }
+
+    /** @brief The MQ-135 fault turns the LED purple; the BH1750 fault only stops sending the luminosity. */
+    void onSensorFault(int sourceId, bool fault) {
+        if (sourceId == LIGHT_SENSOR_IDENTIFIER) {
+            if (fault == lightFaulted) return; // The recovery can arrive twice (see on()).
+            lightFaulted = fault;
+            if (fault) {
+                averageLight(NAN);
+                armMotionWatch(true); // Without the light, the room is watched as if it were dark.
+                lightSensor.initialize(); // In case it was reconnected; retried every minute otherwise.
+            }
+            Serial.printf("[EnvironmentMonitor] BH1750 %s\n", fault ? "fault" : "recovered");
+            return;
+        }
+        faulted = fault;
+        if (fault) alarmBuzzer.handle(Buzzer::TURN_OFF_COMMAND); // A faulted MQ-135 must not keep the alarm sounding.
+        Serial.printf("[EnvironmentMonitor] MQ-135 %s\n", fault ? "fault" : "recovered");
+        showState();
     }
 
     bool changeState(State next) {
@@ -319,7 +412,8 @@ private:
                       NAMES[static_cast<int>(state)], NAMES[static_cast<int>(next)]);
         state = next;
         showState();
-        if (state == State::Warning) playTone(1000, 200);
+        if (faulted) alarmBuzzer.handle(Buzzer::TURN_OFF_COMMAND);
+        else if (state == State::Warning) playTone(1000, 200);
         else if (state == State::Critical) playTone(2000, 500);
         else alarmBuzzer.handle(Buzzer::TURN_OFF_COMMAND);
         return true;
@@ -343,11 +437,37 @@ private:
         alarmBuzzer.handle(Buzzer::PLAY_TONE_COMMAND);
     }
 
-    /** @brief The Edge needs the UTC time of each observation, so readings wait for the NTP clock. */
-    void sendAirQuality() {
-        if (!calibrated || !TimeSynchronizationDriver::isSynchronized()) return;
-        enqueueTelemetryPayload(EnvironmentReading::airQuality(TimeSynchronizationDriver::getCurrentTimestamp(),
-                                                               lastPpm, profile.version));
+    /**
+     * @brief Sends the air quality (once the MQ-135 is calibrated and while it is not faulted) and the light average
+     * (while the BH1750 answers); nothing when the node has neither. The Edge needs the UTC time of each observation,
+     * so readings wait for the NTP clock.
+     */
+    void sendMeasurements() {
+        if (!TimeSynchronizationDriver::isSynchronized()) return;
+        const float ppm = calibrated && !faulted ? lastPpm : NAN; // A faulted MQ-135 must not report its stale ppm.
+        if (std::isnan(ppm) && std::isnan(lastLux)) return;
+        enqueueTelemetryPayload(EnvironmentReading::measurements(TimeSynchronizationDriver::getCurrentTimestamp(),
+                                                                 ppm, lastLux, profile.version));
+    }
+
+    /**
+     * @brief Rule of the motion watch: with the lights on, people are expected in the room, so the PIR is ignored; in
+     * the dark the PIR is armed, and a motion is sent to the Edge and beeps once (a long, high tone, unlike the air
+     * quality alarm). The light comes from the BH1750 state (LIGHTS_ON_THRESHOLD_IN_LUX); with no BH1750 the PIR is armed.
+     */
+    void armMotionWatch(bool armed) {
+        if (armed == motionWatchArmed) return;
+        motionWatchArmed = armed;
+        Serial.printf("[EnvironmentMonitor] Motion watch %s\n", armed ? "armed: the room is dark" : "off: the lights are on");
+    }
+
+    void onMotion(bool detected) {
+        if (!motionWatchArmed) {
+            Serial.printf("[EnvironmentMonitor] Motion %s ignored: the lights are on\n", detected ? "detected" : "stopped");
+            return;
+        }
+        if (detected) playTone(3000, 1000);
+        sendMotion(detected);
     }
 
     void sendMotion(bool detected) {

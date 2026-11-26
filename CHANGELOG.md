@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-26
+
+The node measures the light of the room with a BH1750, watches motion only in the dark, runs on the Modest IoT Nano
+Framework 1.3.0 and keeps the alarm silent while the MQ-135 is faulted. The readings now carry `luminosity`, which
+needs the Edge Service 1.1.0 or later: update the Edge before this firmware.
+
+### Added
+
+- Light sensor BH1750 (GY-302) on the I2C bus (GPIO 21 / 22, address 0x23), read once per second with the framework's
+  `DigitalLightIntensitySensor`. The node sends the average of the last 10 samples as `luminosity` in the same reading
+  as the air quality. A BH1750 that fails or is missing only stops the luminosity; the node sets it up again every
+  minute (#10).
+
+- Motion watch driven by the light: with the lights on (50 lux or more) the PIR is ignored; in the dark a motion is
+  sent to the Edge and beeps once. Without a working BH1750 the PIR stays armed (#10).
+
+- BH1750 in the Wokwi circuit (`diagram.json`) with the custom chip `wokwi/bh1750.chip.*` of the Container Monitor,
+  and `wokwi.toml` to simulate the node locally from VS Code or CLion (#10).
+
+- Host tests of the light sensor (`tests/LightSensor`) (#10), and of the alarm and the readings while the MQ-135 is
+  faulted (`tests/AirQualityAlarm`, `tests/EdgeReadings`) (#8).
+
+### Changed
+
+- The node runs on the Modest IoT Nano Framework 1.3.0 instead of 1.0.0; 1.3.0 compiles on the ESP32 cores 3.x and
+  4.x. The readings write their fields with `write(TelemetryWriter&)` and are sent with a `JsonTelemetryWriter`,
+  still without the envelope of the framework; numbers now carry two decimals. ArduinoJson, which the framework no
+  longer brings, is included to read the profile of the Edge. `libraries.txt` pins `Modest-IoT-Nano-Framework@1.3.0`,
+  because Wokwi may still resolve the bare name to 1.2.1, which does not compile on its core 3.3.12. The host tests
+  and the CI build against 1.3.0 (#9).
+
+- Motion is sent only while the room is dark (see the motion watch); before, every motion change was sent (#10).
+
+- The readings of the air quality also carry `luminosity`, which needs the Edge Service 1.1.0 or later: an older Edge
+  answers `400` to the whole reading, so update the Edge before this firmware (#10).
+
+- While the MQ-135 is faulted, the readings carry only the luminosity; the air quality is sent again once it recovers
+  (#10).
+
+### Fixed
+
+- While the MQ-135 is faulted the alarm is silent: the buzzer stops at the fault, a WARNING does not beep and a
+  CRITICAL does not repeat, and the last air quality before the fault is not sent again. The LED stays purple until
+  the MQ-135 recovers (#8).
+
 ## [1.0.0] - 2026-11-15
 
 First stable version of the Embedded Application of the Environment Monitor, with the same behavior as 0.4.0. From

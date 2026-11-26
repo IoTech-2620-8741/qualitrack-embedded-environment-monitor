@@ -1,0 +1,8 @@
+{
+  "name": "BH1750",
+  "author": "IoTech - QualiTrack",
+  "pins": ["VCC", "GND", "SCL", "SDA", "ADDR"],
+  "controls": [
+    { "id": "lux", "label": "Luminosity (lux)", "type": "range", "min": 0, "max": 1000, "step": 1 }
+  ]
+}

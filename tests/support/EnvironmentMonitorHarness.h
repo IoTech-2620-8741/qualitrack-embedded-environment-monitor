@@ -39,8 +39,8 @@ enum class LedColor { Blue, Green, Yellow, Red, Purple, Other };
 constexpr uint32_t OBSERVATION_TIME = 1794582000u;
 
 /**
- * @brief Puts every fake back in a known state: time 0, pins low, Wi-Fi connected, the Edge answering 200, the clock
- * synchronized at OBSERVATION_TIME and an empty serial log.
+ * @brief Puts every fake back in a known state: time 0, pins low, the BH1750 answering 0 lux, Wi-Fi connected, the Edge
+ * answering 200, the clock synchronized at OBSERVATION_TIME and an empty serial log.
  */
 inline void resetFakes() {
     fakeMillis = 0;
@@ -50,6 +50,7 @@ inline void resetFakes() {
     fakeToneCall = {};
     fakeToneCalled = false;
     fakeNoToneCalled = false;
+    Wire = FakeWire(); // The I2C bus of the BH1750, from the framework's fakes.
     HTTPClient::resetMockState();
     WiFi.setStatus(WL_CONNECTED);
     Serial.output.clear();
@@ -70,10 +71,14 @@ class EnvironmentMonitorHarness {
 public:
     static constexpr int CLEAN_AIR_ANALOG_VALUE = 2048; ///< MQ-135 sample in clean air (mid scale of the 12-bit ADC).
 
-    /** @brief Resets the fakes and builds the node as setup() does, with the settings of the sketch. */
-    EnvironmentMonitorHarness() {
+    /**
+     * @brief Resets the fakes and builds the node as setup() does, with the settings of the sketch.
+     * @param lightSensorConnected False to start the node with no BH1750 on the I2C bus.
+     */
+    explicit EnvironmentMonitorHarness(bool lightSensorConnected = true) {
         resetFakes();
         fakeAnalogRead[AIR_QUALITY_PIN] = CLEAN_AIR_ANALOG_VALUE;
+        setLightSensorConnected(lightSensorConnected);
         wifiDriver = std::make_unique<WiFiConnectivityDriver>(WIFI_SSID, WIFI_PASSWORD);
         edgeClient = std::make_unique<HttpGatewayClient>(*wifiDriver, EDGE_BASE_URL);
         monitorUnderTest = std::make_unique<TestableEnvironmentMonitor>(*wifiDriver, *edgeClient);
@@ -86,6 +91,7 @@ public:
     void advanceMilliseconds(unsigned long milliseconds) {
         assert(fakeTimerInterrupt != nullptr);
         for (unsigned long elapsed = 0; elapsed < milliseconds; elapsed += SAMPLER_TICK_IN_MILLISECONDS) {
+            if (!lightSensorPresent) Wire.clearCommands(); // Keeps every set-up of a missing BH1750 failing.
             fakeMillis += SAMPLER_TICK_IN_MILLISECONDS;
             fakeTimerInterrupt(fakeTimerInterruptArgument);
             runFakeTask(SAMPLER_TASK_NAME);
@@ -103,6 +109,19 @@ public:
         const float cleanAirRelativeResistance = 4095.0f / CLEAN_AIR_ANALOG_VALUE - 1.0f;
         fakeAnalogRead[AIR_QUALITY_PIN] =
             static_cast<int>(lroundf(4095.0f / (1.0f + resistanceRatio * cleanAirRelativeResistance)));
+    }
+
+    /** @brief Sets the raw value of the BH1750 that the framework reads as @p luminosityInLux (raw = lux × 1.2). */
+    void setLuminosityInLux(float luminosityInLux) {
+        Wire.raw = static_cast<uint16_t>(lroundf(luminosityInLux * 1.2f));
+    }
+
+    /** @brief Connects or disconnects the BH1750: a disconnected sensor acknowledges no command and answers no byte. */
+    void setLightSensorConnected(bool connected) {
+        lightSensorPresent = connected;
+        Wire.clearCommands();
+        Wire.failureAt = connected ? -1 : 1; // The fake fails the command that makes the count 1.
+        Wire.byteCount = connected ? 2 : 0;
     }
 
     /**
@@ -132,11 +151,10 @@ public:
         std::vector<std::string> readings;
         TelemetryPackage* package = nullptr;
         while (xQueueReceive(telemetryQueue(), &package, 0) == pdPASS) {
-            JsonDocument json;
-            package->serialize(json);
-            std::string body;
-            serializeJson(json, body);
-            readings.push_back(body);
+            JsonTelemetryWriter writer;
+            package->write(writer);
+            writer.finalize();
+            readings.push_back(writer.getString());
             delete package;
         }
         return readings;
@@ -189,6 +207,7 @@ private:
     /** @return The telemetry queue between the sampler and the network task. */
     FakeQueue* telemetryQueue() const { return findQueue(sizeof(TelemetryPackage*)); }
 
+    bool lightSensorPresent = true;                               ///< Whether the BH1750 is on the I2C bus.
     std::unique_ptr<WiFiConnectivityDriver> wifiDriver;           ///< Wi-Fi of the node (fake).
     std::unique_ptr<HttpGatewayClient> edgeClient;                ///< HTTP client of the Edge (fake transport).
     std::unique_ptr<TestableEnvironmentMonitor> monitorUnderTest; ///< Built last, destroyed first.
