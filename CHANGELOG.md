@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Light sensor BH1750 (GY-302) on the I2C bus (GPIO 21 / 22, address 0x23), read once per second with the framework's
+  `DigitalLightIntensitySensor`. The node sends the average of the last 10 samples as `luminosity` in the same reading
+  as the air quality. A BH1750 that fails or is missing only stops the luminosity; the node sets it up again every
+  minute.
+
+- Motion watch driven by the light: with the lights on (50 lux or more) the PIR is ignored; in the dark a motion is
+  sent to the Edge and beeps once. Without a working BH1750 the PIR stays armed.
+
+- BH1750 in the Wokwi circuit (`diagram.json`) with the custom chip `wokwi/bh1750.chip.*` of the Container Monitor.
+
+- Host tests of the light sensor (`tests/LightSensor`).
+
 ### Changed
 
 - The node runs on the Modest IoT Nano Framework 1.3.0 instead of 1.0.0; 1.3.0 compiles on the ESP32 cores 3.x and
@@ -15,6 +29,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   longer brings, is included to read the profile of the Edge. `libraries.txt` pins `Modest-IoT-Nano-Framework@1.3.0`,
   because Wokwi may still resolve the bare name to 1.2.1, which does not compile on its core 3.3.12. The host tests
   and the CI build against 1.3.0 (#9).
+
+- Motion is sent only while the room is dark (see the motion watch); before, every motion change was sent.
+
+- The readings of the air quality also carry `luminosity`, which needs the Edge Service version that accepts it from
+  an Environment Monitor.
+
+- While the MQ-135 is faulted, the readings carry only the luminosity; the air quality is sent again once it recovers.
 
 ## [1.0.0] - 2026-11-15
 

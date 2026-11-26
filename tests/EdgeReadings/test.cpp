@@ -163,8 +163,10 @@ void sensorFaultPreventsStaleAirQualityReadings() {
     // Advance beyond the next periodic report at 60.1 seconds.
     harness.advanceMilliseconds(30000);
 
-    // A faulted sensor must not report its previous ppm value.
-    assert(harness.takeSentReadings().empty());
+    // A faulted sensor must not report its previous ppm value; the BH1750 keeps sending the luminosity.
+    const JsonDocument faultedReport = takeTheOnlyReading(harness);
+    assert(faultedReport["air_quality"].isNull());
+    assert(!faultedReport["luminosity"].isNull());
 
     // Motion telemetry must continue working independently.
     harness.setMotion(true);
