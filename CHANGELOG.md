@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The node runs on the Modest IoT Nano Framework 1.3.0 instead of 1.0.0; 1.3.0 compiles on the ESP32 cores 3.x and
+  4.x. The readings write their fields with `write(TelemetryWriter&)` and are sent with a `JsonTelemetryWriter`,
+  still without the envelope of the framework; numbers now carry two decimals. ArduinoJson, which the framework no
+  longer brings, is included to read the profile of the Edge. `libraries.txt` pins `Modest-IoT-Nano-Framework@1.3.0`,
+  because Wokwi may still resolve the bare name to 1.2.1, which does not compile on its core 3.3.12. The host tests
+  and the CI build against 1.3.0 (#9).
+
 ## [1.0.0] - 2026-11-15
 
 First stable version of the Embedded Application of the Environment Monitor, with the same behavior as 0.4.0. From
