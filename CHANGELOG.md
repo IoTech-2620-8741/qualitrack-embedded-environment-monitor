@@ -35,6 +35,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The readings of the air quality also carry `luminosity`, which needs the Edge Service version that accepts it from
   an Environment Monitor.
 
+- While the MQ-135 is faulted, the readings carry only the luminosity; the air quality is sent again once it recovers.
+
 ## [1.0.0] - 2026-11-15
 
 First stable version of the Embedded Application of the Environment Monitor, with the same behavior as 0.4.0. From

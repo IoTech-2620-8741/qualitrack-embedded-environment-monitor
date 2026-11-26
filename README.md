@@ -66,7 +66,8 @@ The BH1750 is read once per second and the node sends the average of its last 10
 sensor, in the same reading as the air quality. The light does not change the state of the environment or the LED:
 the environmental profile of an environment has thresholds only for the air quality. When the BH1750 fails three
 reads in a row (or is missing at start-up) the node keeps working and only stops sending the luminosity; it sets the
-sensor up again once a minute and sends the luminosity again once it answers.
+sensor up again once a minute and sends the luminosity again once it answers. Likewise, while the MQ-135 is faulted
+the node silences the alarm and sends only the luminosity.
 
 The light also drives the **motion watch**. With the lights on (50 lux or more, the threshold of the BH1750 state)
 people are expected in the room, so the PIR is ignored: no motion reading and no beep. In the dark the PIR is armed,
