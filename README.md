@@ -7,7 +7,7 @@ motion, evaluates the environmental profile of its environment, warns locally wi
 its readings to the QualiTrack Edge Service of the facility.
 
 The firmware is an Arduino sketch built on the [Modest IoT Nano Framework](https://github.com/modest-iot/modest-iot-nano-framework)
-v1.0.0, and it runs on the ESP32 DevKit v1 and in the [Wokwi](https://wokwi.com) simulator.
+v1.3.0, and it runs on the ESP32 DevKit v1 and in the [Wokwi](https://wokwi.com) simulator.
 
 ## Responsibilities
 
@@ -74,10 +74,11 @@ and a motion is sent to the Edge at once and beeps once (3 kHz for one second, u
 of the motion is sent too. The watch follows the BH1750 within a second of a change of light. While the BH1750 fails
 or is missing, the room is watched as if it were dark, so no intrusion goes unnoticed.
 
-Notes on the framework v1.0.0:
+Notes on the framework v1.3.0:
 
 - `HttpGatewayClient::sendTelemetryRecord()` adds the `timestamp` and `sequence` of the framework, which the Edge
-  rejects, so the node posts the JSON of each reading with `sendRequest()`. The client sends only the `Authorization`
+  rejects, so the node writes the fields of each reading with a `JsonTelemetryWriter` and posts them with
+  `sendRequest()`. The client sends only the `Authorization`
   header, so the API key goes as a Bearer token, which the Edge accepts since ADR-0018.
 - The `GasSensor` raises `DATA_READ` only when Rs/R0 changes by more than 0.05 (an absolute step, about a fifth of the
   ppm value near 800 ppm). The device takes R0 from the sample that ends the calibration and classifies the latest
@@ -91,8 +92,8 @@ Notes on the framework v1.0.0:
 
 ## Build with the Arduino IDE
 
-1. Install the ESP32 core (Espressif, 3.x) and, in the Library Manager, `Modest-IoT-Nano-Framework` 1.0.0, which
-   also installs ArduinoJson and MQTT.
+1. Install the ESP32 core (Espressif, 3.x) and, in the Library Manager, `Modest-IoT-Nano-Framework` 1.3.0, which
+   also installs MQTT, and ArduinoJson 7, which reads the profile of the Edge (the framework no longer brings it).
 2. Copy `EnvironmentMonitor/secrets.example.h` as `EnvironmentMonitor/secrets.h` and set the Wi-Fi network, the URL
    of the Edge, the identifier of the node and its API key.
 3. Open `EnvironmentMonitor/EnvironmentMonitor.ino`, choose the board "ESP32 Dev Module" and upload it.
@@ -101,12 +102,12 @@ Notes on the framework v1.0.0:
 
 The same steps from a terminal:
 
-1. Install the ESP32 core and the framework v1.0.0 from the Arduino Library Manager, which also installs the
-   libraries it depends on (ArduinoJson and MQTT):
+1. Install the ESP32 core, the framework v1.3.0 from the Arduino Library Manager, which also installs MQTT, and
+   ArduinoJson:
 
    ```bash
    arduino-cli core install esp32:esp32
-   arduino-cli lib install "Modest-IoT-Nano-Framework@1.0.0"
+   arduino-cli lib install "Modest-IoT-Nano-Framework@1.3.0" ArduinoJson
    ```
 
 2. Copy `EnvironmentMonitor/secrets.example.h` as `EnvironmentMonitor/secrets.h` and set the Wi-Fi network, the URL
@@ -118,14 +119,16 @@ The same steps from a terminal:
    arduino-cli compile --fqbn esp32:esp32:esp32 EnvironmentMonitor
    ```
 
-It was verified with arduino-cli 1.x, ESP32 core 3.3, ArduinoJson 7.4 and MQTT 2.5.
+It was verified with arduino-cli 1.x, ESP32 core 3.3, the framework 1.3.0, ArduinoJson 7.4 and MQTT 2.5.
 
 ## Simulate in Wokwi
 
 Open the published project: [qualitrack-environment-monitor](https://wokwi.com/projects/480697842499374081). When the
 sketch changes, update its files there, or build a new project with the steps below.
 
-`libraries.txt` takes the framework v1.0.0 from the Arduino Library Manager, as arduino-cli does. The `ModestIoT`
+`libraries.txt` takes the framework v1.3.0 from the Arduino Library Manager, as arduino-cli does. Keep the version
+written: Wokwi may still resolve the bare name to the framework 1.2.1, which does not compile on its ESP32 core 3.3.12
+(`BLE.h: No such file or directory`). The `ModestIoT`
 library published on Wokwi (`ModestIoT@wokwi:...`) is an older version of the framework, without `ModestLog.h` and
 with the MQTT client on PubSubClient, so the sketch does not use it.
 
@@ -153,7 +156,7 @@ What to expect:
 ## Tests
 
 The host tests compile the real `EnvironmentMonitor.ino`, unchanged, on a computer, with the classes of the Modest IoT
-Nano Framework v1.0.0 and its host fakes. The framework tests each of its classes alone, so its fakes do not run
+Nano Framework v1.3.0 and its host fakes. The framework tests each of its classes alone, so its fakes do not run
 FreeRTOS; `tests/fakes` adds what a whole sketch needs: working queues, tasks and timer, `Serial`, and an NTP clock the
 tests control. The tests check what the node does from the outside: the LED, the buzzer, the readings it queues and the
 requests it sends to the Edge.
@@ -171,7 +174,7 @@ Run them from the root of the repository; they need g++ with C++17, git and curl
 tests/run_all.sh
 ```
 
-The first run downloads the framework v1.0.0 and ArduinoJson 7.4.3 into `build/test-dependencies/`. The tests run with
+The first run downloads the framework v1.3.0 and ArduinoJson 7.4.3 into `build/test-dependencies/`. The tests run with
 AddressSanitizer and UndefinedBehaviorSanitizer, which `ENABLE_SANITIZERS=0 tests/run_all.sh` turns off. Like the
 sketch, they take `secrets.h` when it exists and `secrets.example.h` otherwise.
 
@@ -209,7 +212,7 @@ missing or rejected API key and `409` when a retry changes a stored reading. See
 
 ## Technologies
 
-C++ with the Arduino framework for the ESP32, the Modest IoT Nano Framework v1.0.0 and ArduinoJson 7, built with
+C++ with the Arduino framework for the ESP32, the Modest IoT Nano Framework v1.3.0 and ArduinoJson 7, built with
 arduino-cli and simulated in Wokwi.
 
 ## Branches and Commits

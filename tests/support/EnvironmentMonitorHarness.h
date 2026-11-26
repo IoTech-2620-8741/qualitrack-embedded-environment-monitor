@@ -151,11 +151,10 @@ public:
         std::vector<std::string> readings;
         TelemetryPackage* package = nullptr;
         while (xQueueReceive(telemetryQueue(), &package, 0) == pdPASS) {
-            JsonDocument json;
-            package->serialize(json);
-            std::string body;
-            serializeJson(json, body);
-            readings.push_back(body);
+            JsonTelemetryWriter writer;
+            package->write(writer);
+            writer.finalize();
+            readings.push_back(writer.getString());
             delete package;
         }
         return readings;

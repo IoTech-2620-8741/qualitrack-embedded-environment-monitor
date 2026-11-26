@@ -23,8 +23,9 @@
  * `WiFiConnectivityDriver`, `TimeSynchronizationDriver`, `HttpGatewayClient`). The sketch only adds what the framework
  * asks an application to write: the telemetry package of a reading and the device that reacts to the events.
  *
- * Requirements: ESP32 core 3.x and the library Modest-IoT-Nano-Framework 1.0.0 (Arduino Library Manager, with
- * ArduinoJson and MQTT). Copy secrets.example.h as secrets.h with the values of the node.
+ * Requirements: ESP32 core 3.x or 4.x, and the libraries Modest-IoT-Nano-Framework 1.3.0 (Arduino Library Manager,
+ * with MQTT) and ArduinoJson 7, which reads the profile of the Edge. Copy secrets.example.h as secrets.h with the
+ * values of the node.
  *
  * Circuit of report section 5.6, with an RGB LED instead of the LED ring:
  *
@@ -37,6 +38,7 @@
  * | BH1750 (GY-302) SDA / SCL, ADDR not connected (address 0x23) | GPIO 21 / 22 |
  */
 #include <ModestIoT.h>
+#include <ArduinoJson.h> // The framework writes the readings; ArduinoJson reads the profile.
 #include <algorithm>
 #include <cmath>
 #include <ctime>
@@ -90,23 +92,23 @@ public:
         return std::unique_ptr<EnvironmentReading>(new EnvironmentReading(observedAt, NAN, NAN, true, detected, profileVersion));
     }
 
-    void serialize(JsonDocument& json) const override {
+    void write(TelemetryWriter& writer) const override {
         char measuredAt[21];
         const time_t seconds = observedAt;
         tm utc{};
         gmtime_r(&seconds, &utc);
         strftime(measuredAt, sizeof(measuredAt), "%Y-%m-%dT%H:%M:%SZ", &utc);
 
-        json["device_id"] = DEVICE_ID;
-        json["measured_at"] = measuredAt; // A char array is copied into the document.
+        writer.field("device_id", DEVICE_ID);
+        writer.field("measured_at", measuredAt); // The writer copies the text into its buffer.
         if (hasMotion) {
-            json["motion"] = motionDetected;
+            writer.field("motion", motionDetected);
         } else {
             // The MQ-135 ppm is indicative; the BH1750 resolves about 1 lux. Both go with one decimal.
-            if (!std::isnan(airQualityInPpm)) json["air_quality"] = roundf(airQualityInPpm * 10.0f) / 10.0f;
-            if (!std::isnan(luminosityInLux)) json["luminosity"] = roundf(luminosityInLux * 10.0f) / 10.0f;
+            if (!std::isnan(airQualityInPpm)) writer.field("air_quality", roundf(airQualityInPpm * 10.0f) / 10.0f);
+            if (!std::isnan(luminosityInLux)) writer.field("luminosity", roundf(luminosityInLux * 10.0f) / 10.0f);
         }
-        if (profileVersion != 0) json["profile_version"] = profileVersion;
+        if (profileVersion != 0) writer.field("profile_version", static_cast<int32_t>(profileVersion));
     }
 
 private:
@@ -155,9 +157,9 @@ public:
         appendSensorToScheduler(&airQualitySensor, Sensor::MEASURE_DATA_REQUESTED_EVENT_IDENTIFIER);
         appendSensorToScheduler(&lightSensor, Sensor::MEASURE_DATA_REQUESTED_EVENT_IDENTIFIER); // One sample per second.
         appendSensorToTriggeringScheduler(&motionSensor, Sensor::MEASURE_DATA_REQUESTED_EVENT_IDENTIFIER, CHANGE);
-        appendSensorToScheduler(this, EVALUATE_EVENT, 1000);       // Classify the latest sample every second.
-        appendSensorToScheduler(this, REPORT_EVENT, 60000);        // Send the air quality and the light every minute.
-        appendSensorToScheduler(this, ALARM_REPEAT_EVENT, 2000);   // Beep every two seconds while CRITICAL.
+        appendSensorToScheduler(this, EVALUATE_EVENT, AIR_QUALITY_EVALUATION_INTERVAL_MS);       // Classify the latest sample every second.
+        appendSensorToScheduler(this, REPORT_EVENT, AIR_QUALITY_REPORT_INTERVAL_MS);        // Send the air quality and the light every minute.
+        appendSensorToScheduler(this, ALARM_REPEAT_EVENT, CRITICAL_ALARM_REPEAT_INTERVAL_MS);   // Beep every two seconds while CRITICAL.
         initializeAsynchronousEngine(QUEUE_LENGTH);
         Serial.println("[EnvironmentMonitor] Calibrating the MQ-135 in clean air for 30 seconds");
     }
@@ -177,7 +179,7 @@ public:
                 sendMeasurements();
                 break;
             case ALARM_REPEAT_EVENT:
-                if (calibrated && state == State::Critical) playTone(2000, 500);
+                if (calibrated && !faulted && state == State::Critical) playTone(2000, 500);
                 break;
             case PassiveInfraredSensor::MOTION_DETECTED_EVENT_IDENTIFIER: onMotion(true); break;
             case PassiveInfraredSensor::MOTION_STOPPED_EVENT_IDENTIFIER: onMotion(false); break;
@@ -185,7 +187,7 @@ public:
             case Sensor::SENSOR_RECOVERED_EVENT_IDENTIFIER: onSensorFault(event.sourceId, false); break;
             case DigitalLightIntensitySensor::LIGHT_DETECTED_EVENT_IDENTIFIER:
             case DigitalLightIntensitySensor::LIGHT_ABSENT_EVENT_IDENTIFIER:
-                // The BH1750 raises one of these on its first sample after a set-up. The framework v1.0.0 replaces its
+                // The BH1750 raises one of these on its first sample after a set-up. The framework 1.3.0 replaces its
                 // SENSOR_RECOVERED event with them, so a sample after a fault is the recovery.
                 if (lightFaulted) onSensorFault(LIGHT_SENSOR_IDENTIFIER, false);
                 armMotionWatch(event.identifier == DigitalLightIntensitySensor::LIGHT_ABSENT_EVENT_IDENTIFIER);
@@ -220,10 +222,11 @@ protected:
     /** @runs_on{network} */
     void processQueuedTelemetryData(const TelemetryPackage* package) const override {
         if (package == nullptr) return;
-        JsonDocument json;
-        package->serialize(json);
-        char body[256];
-        serializeJson(json, body, sizeof(body));
+        // Only the fields of the reading: serializeToBuffer() would add the envelope of the framework.
+        JsonTelemetryWriter writer;
+        package->write(writer);
+        writer.finalize();
+        const char* body = writer.getString();
         edge.setServiceEndpointUrl(readingsUrl);
         if (edge.sendRequest(HttpGatewayClient::HttpMethod::Post, body)) return;
         const int status = edge.getLastResponseStatusCode();
@@ -235,13 +238,13 @@ protected:
     void maintainNetworkServices() const override {
         if (!wifi.isConnected()) return;
         const unsigned long now = millis();
-        if (!TimeSynchronizationDriver::isSynchronized() && due(lastClockAttemptAt, now, 30000)) {
+        if (!TimeSynchronizationDriver::isSynchronized() && due(lastClockAttemptAt, now, CLOCK_SYNC_RETRY_INTERVAL_MS)) {
             // The driver marks the clock as synchronized only inside initialize(), so it is retried.
             TimeSynchronizationDriver::initialize(TIME_ZONE, NTP_SERVER);
             if (TimeSynchronizationDriver::isSynchronized()) Serial.println("[EnvironmentMonitor] Clock synchronized");
         }
-        if (!signedIn && due(lastSignInAttemptAt, now, 30000)) signIn();
-        if (due(lastConfigurationAttemptAt, now, configurationRead ? 300000 : 30000)) readConfiguration();
+        if (!signedIn && due(lastSignInAttemptAt, now, SIGN_IN_RETRY_INTERVAL_MS)) signIn();
+        if (due(lastConfigurationAttemptAt, now, configurationRead ? PROFILE_REFRESH_INTERVAL_MS : PROFILE_RETRY_INTERVAL_MS)) readConfiguration();
     }
 
 private:
@@ -260,6 +263,21 @@ private:
     };
 
     static constexpr unsigned long SAMPLER_TICK_IN_MILLISECONDS = 100;
+
+    /** @name Scheduler intervals (milliseconds) */
+    //@{
+    static constexpr unsigned long AIR_QUALITY_EVALUATION_INTERVAL_MS = 1000;
+    static constexpr unsigned long AIR_QUALITY_REPORT_INTERVAL_MS = 60000;
+    static constexpr unsigned long CRITICAL_ALARM_REPEAT_INTERVAL_MS = 2000;
+    //@}
+
+    /** @name Network operation intervals (milliseconds) */
+    //@{
+    static constexpr unsigned long CLOCK_SYNC_RETRY_INTERVAL_MS = 30000;
+    static constexpr unsigned long SIGN_IN_RETRY_INTERVAL_MS = 30000;
+    static constexpr unsigned long PROFILE_RETRY_INTERVAL_MS = 30000;
+    static constexpr unsigned long PROFILE_REFRESH_INTERVAL_MS = 300000;
+    //@}
     static constexpr uint8_t QUEUE_LENGTH = 10;
     static constexpr uint8_t SENSOR_FAULT_THRESHOLD = 3;
     static constexpr float CURVE_SLOPE = -0.36f;    // PPM = 10^((log10(Rs/R0) - 0.94) / -0.36)
@@ -382,6 +400,7 @@ private:
             return;
         }
         faulted = fault;
+        if (fault) alarmBuzzer.handle(Buzzer::TURN_OFF_COMMAND); // A faulted MQ-135 must not keep the alarm sounding.
         Serial.printf("[EnvironmentMonitor] MQ-135 %s\n", fault ? "fault" : "recovered");
         showState();
     }
@@ -393,7 +412,8 @@ private:
                       NAMES[static_cast<int>(state)], NAMES[static_cast<int>(next)]);
         state = next;
         showState();
-        if (state == State::Warning) playTone(1000, 200);
+        if (faulted) alarmBuzzer.handle(Buzzer::TURN_OFF_COMMAND);
+        else if (state == State::Warning) playTone(1000, 200);
         else if (state == State::Critical) playTone(2000, 500);
         else alarmBuzzer.handle(Buzzer::TURN_OFF_COMMAND);
         return true;
@@ -418,13 +438,13 @@ private:
     }
 
     /**
-     * @brief Sends the air quality (once the MQ-135 is calibrated) and the light average (while the BH1750 answers);
-     * nothing when the node has neither. The Edge needs the UTC time of each observation, so readings
-     * wait for the NTP clock.
+     * @brief Sends the air quality (once the MQ-135 is calibrated and while it is not faulted) and the light average
+     * (while the BH1750 answers); nothing when the node has neither. The Edge needs the UTC time of each observation,
+     * so readings wait for the NTP clock.
      */
     void sendMeasurements() {
         if (!TimeSynchronizationDriver::isSynchronized()) return;
-        const float ppm = calibrated ? lastPpm : NAN;
+        const float ppm = calibrated && !faulted ? lastPpm : NAN; // A faulted MQ-135 must not report its stale ppm.
         if (std::isnan(ppm) && std::isnan(lastLux)) return;
         enqueueTelemetryPayload(EnvironmentReading::measurements(TimeSynchronizationDriver::getCurrentTimestamp(),
                                                                  ppm, lastLux, profile.version));

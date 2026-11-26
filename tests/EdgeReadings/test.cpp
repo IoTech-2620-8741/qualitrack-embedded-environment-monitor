@@ -140,6 +140,57 @@ void readingsCarryTheProfileVersionOnceApplied() {
     assert(motion["profile_version"] == 3);
 }
 
+/**@brief An MQ-135 fault prevents stale air quality readings without interrupting motion telemetry.*/
+void sensorFaultPreventsStaleAirQualityReadings() {
+    EnvironmentMonitorHarness harness;
+    harness.calibrateInCleanAir();
+
+    // Discard the reading generated after calibration.
+    harness.takeSentReadings();
+
+    // Generate a valid critical reading.
+    harness.setAirQualityInPpm(1200);
+    harness.advanceMilliseconds(1000);
+
+    const JsonDocument criticalReading = takeTheOnlyReading(harness);
+    assert(criticalReading["air_quality"].as<float>() > 1000.0f);
+
+    // Simulate an MQ-135 fault.
+    harness.monitor().on(
+        Event{Sensor::SENSOR_FAULT_EVENT_IDENTIFIER, AIR_QUALITY_PIN}
+    );
+
+    // Advance beyond the next periodic report at 60.1 seconds.
+    harness.advanceMilliseconds(30000);
+
+    // A faulted sensor must not report its previous ppm value; the BH1750 keeps sending the luminosity.
+    const JsonDocument faultedReport = takeTheOnlyReading(harness);
+    assert(faultedReport["air_quality"].isNull());
+    assert(!faultedReport["luminosity"].isNull());
+
+    // Motion telemetry must continue working independently.
+    harness.setMotion(true);
+
+    const JsonDocument motionReading = takeTheOnlyReading(harness);
+    assert(motionReading["motion"] == true);
+    assert(motionReading["air_quality"].isNull());
+
+    // Simulate sensor recovery.
+    harness.monitor().on(
+        Event{Sensor::SENSOR_RECOVERED_EVENT_IDENTIFIER, AIR_QUALITY_PIN}
+    );
+
+    // A fresh reading should be reported after recovery.
+    harness.setAirQualityInPpm(500);
+    harness.advanceMilliseconds(1000);
+
+    const JsonDocument recoveredReading = takeTheOnlyReading(harness);
+    assert(
+        std::fabs(recoveredReading["air_quality"].as<float>() - 500.0f)
+        < 3.0f
+    );
+}
+
 } // namespace
 
 int main() {
@@ -152,5 +203,6 @@ int main() {
     RUN_TEST(aReadingIsPostedToTheReadingsRoute);
     RUN_TEST(aRejectedReadingSignsInAgain);
     RUN_TEST(readingsCarryTheProfileVersionOnceApplied);
+    RUN_TEST(sensorFaultPreventsStaleAirQualityReadings);
     return 0;
 }
