@@ -25,6 +25,7 @@
 #define uxQueueMessagesWaiting frameworkNoOpQueueMessagesWaiting
 #define timerAttachInterruptArg frameworkNoOpTimerAttachInterruptArg
 #define String FrameworkFakeString
+#define HardwareSerial FrameworkFakeHardwareSerial // The framework 1.3.0 fake has its own; tests/fakes keeps Serial.
 #include_next <Arduino.h>
 #undef xTaskCreatePinnedToCore
 #undef xTaskNotify
@@ -37,6 +38,7 @@
 #undef uxQueueMessagesWaiting
 #undef timerAttachInterruptArg
 #undef String
+#undef HardwareSerial
 
 #include <algorithm>
 #include <cstring>
