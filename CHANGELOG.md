@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-11-26
+
+The node measures the light of the room with a BH1750, watches motion only in the dark, runs on the Modest IoT Nano
+Framework 1.3.0 and keeps the alarm silent while the MQ-135 is faulted. It is a major version because the readings
+now carry `luminosity`, which an Edge Service older than 1.1.0 rejects: update the Edge before this firmware.
+
 ### Added
 
 - Light sensor BH1750 (GY-302) on the I2C bus (GPIO 21 / 22, address 0x23), read once per second with the framework's
