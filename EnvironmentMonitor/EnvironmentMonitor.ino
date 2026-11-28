@@ -39,9 +39,11 @@
  */
 #include <ModestIoT.h>
 #include <ArduinoJson.h> // The framework writes the readings; ArduinoJson reads the profile.
+#include <HTTPClient.h>
 #include <algorithm>
 #include <cmath>
 #include <ctime>
+#include <initializer_list>
 #include <memory>
 
 #if __has_include("secrets.h")
@@ -68,6 +70,9 @@ static constexpr const char* SIGN_IN_ROUTE = "/api/v1/auth/sign-in";
 static constexpr const char* READINGS_ROUTE = "/api/v1/monitoring/environment-readings";
 static constexpr const char* CONFIGURATION_ROUTE = "/api/v1/configurations/";
 //@}
+
+/// The API key of the node as a Bearer token, which the Edge accepts (Edge ADR-0018); set by setup().
+static char authorizationHeader[128];
 
 static constexpr unsigned long SERIAL_BAUD_RATE = 115200;
 static constexpr unsigned long MAIN_LOOP_DELAY_IN_MILLISECONDS = 60000;
@@ -491,22 +496,44 @@ private:
 
     /**
      * @brief Reads the configuration of the node and hands its AIR_QUALITY limits to the sampler task.
+     *
+     * The `HttpGatewayClient` keeps 511 bytes of a response, and the configuration of an environment with the air
+     * quality and luminosity thresholds is longer (589 bytes from an Edge in development, which indents its JSON), so
+     * this request reads the body with the `HTTPClient` of the ESP32 core, as the Container Monitor does.
      * @runs_on{network}
      */
     void readConfiguration() const {
-        edge.setServiceEndpointUrl(configurationUrl);
-        if (!edge.sendRequest(HttpGatewayClient::HttpMethod::Get)) {
-            if (edge.getLastResponseStatusCode() == 404) Serial.println("[EnvironmentMonitor] The Edge has no profile for this node yet");
+        HTTPClient http;
+        http.begin(configurationUrl);
+        http.addHeader("Authorization", authorizationHeader);
+        const int status = http.GET();
+        const String body = status == 200 ? http.getString() : String();
+        http.end();
+        if (status == 404) {
+            Serial.println("[EnvironmentMonitor] The Edge has no profile for this node yet");
             return;
         }
+        if (status != 200) {
+            if (status == 401) signedIn = false;
+            Serial.printf("[EnvironmentMonitor] Configuration not read (status %d)\n", status);
+            return;
+        }
+        JsonDocument filter;
+        filter["profile_version"] = true;
+        for (const char* key : {"metric", "normal_min", "normal_max", "critical_min", "critical_max"}) {
+            filter["thresholds"][0][key] = true;
+        }
         JsonDocument configuration;
-        if (deserializeJson(configuration, edge.getResponseBody())) return;
+        if (deserializeJson(configuration, body.c_str(), DeserializationOption::Filter(filter))) {
+            Serial.println("[EnvironmentMonitor] Configuration not understood");
+            return;
+        }
         const uint32_t version = configuration["profile_version"] | 0u;
         for (JsonObjectConst threshold : configuration["thresholds"].as<JsonArrayConst>()) {
             if (strcmp(threshold["metric"] | "", "AIR_QUALITY") != 0) continue;
             const float limits[] = {threshold["normal_min"] | NAN, threshold["normal_max"] | NAN,
                                     threshold["critical_min"] | NAN, threshold["critical_max"] | NAN};
-            if (version == 0 || !isValidProfile(limits)) return;
+            if (version == 0 || !isValidProfile(limits)) break;
             configurationRead = true;
             // The framework's hooks are const; enqueueCommand() is how the network task hands data to the sampler.
             auto* device = const_cast<EnvironmentMonitor*>(this);
@@ -517,6 +544,7 @@ private:
             device->enqueueCommand(device, Command{APPLY_PROFILE, static_cast<int32_t>(version)});
             return;
         }
+        Serial.println("[EnvironmentMonitor] The configuration has no valid air quality profile");
     }
 
     /** @brief Same rule as the cloud: complete sides, at least one, and critical limits outside the normal ones. */
@@ -530,7 +558,6 @@ private:
     }
 };
 
-static char authorizationHeader[128];
 static WiFiConnectivityDriver* transportDriver = nullptr;
 static HttpGatewayClient* edgeGateway = nullptr;
 static EnvironmentMonitor* environmentMonitor = nullptr;

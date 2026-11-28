@@ -14,6 +14,38 @@ constexpr const char* PROFILE_VERSION_3 =
     R"({"profile_version":3,"thresholds":[{"metric":"TEMPERATURE","normal_max":8,"critical_max":10},)"
     R"({"metric":"AIR_QUALITY","normal_min":null,"normal_max":950,"critical_min":null,"critical_max":1100}]})";
 
+/**
+ * @brief Configuration of an environment with the air quality and luminosity thresholds, indented as an Edge in
+ * development serves it: longer than the 511 bytes the HttpGatewayClient of the framework keeps of a response.
+ */
+constexpr char LONG_CONFIGURATION[] = R"({
+  "actuation_rules": [],
+  "device_id": "ESP32-ENV-ALMMP",
+  "device_type": "ENVIRONMENTAL_DEVICE",
+  "profile_version": 2,
+  "synced_at": "2026-11-28T04:32:03.102551Z",
+  "thresholds": [
+    {
+      "critical_max": 900.0,
+      "critical_min": null,
+      "metric": "AIR_QUALITY",
+      "normal_max": 600.0,
+      "normal_min": null,
+      "unit": "ppm"
+    },
+    {
+      "critical_max": 800.0,
+      "critical_min": null,
+      "metric": "LUMINOSITY",
+      "normal_max": 400.0,
+      "normal_min": null,
+      "unit": "lux"
+    }
+  ],
+  "updated_at": "2026-11-28T04:23:27.468329Z"
+})";
+static_assert(sizeof(LONG_CONFIGURATION) > 512, "the configuration must not fit the response buffer of the framework");
+
 /** @return Whether a node that reads @p configuration from the Edge queues no command and applies no profile. */
 bool profileIsIgnored(const char* configuration) {
     EnvironmentMonitorHarness harness;
@@ -93,6 +125,19 @@ void aValidProfileIsApplied() {
     assert(harness.logged("Air quality profile version 3 applied"));
 }
 
+/** @brief MS15: a configuration longer than the response buffer of the framework is read whole and applied. */
+void aLongConfigurationIsApplied() {
+    EnvironmentMonitorHarness harness;
+    harness.calibrateInCleanAir();
+    HTTPClient::setResponse(200, LONG_CONFIGURATION);
+    harness.monitor().maintainNetworkServices();
+    assert(harness.pendingCommandCount() == 5); // Four limits and APPLY_PROFILE.
+
+    harness.advanceMilliseconds(100);
+    assert(harness.pendingCommandCount() == 0);
+    assert(harness.logged("Air quality profile version 2 applied"));
+}
+
 /** @brief MS15: a profile with lower limits only is applied: under 500 ppm is WARNING, under 300 ppm CRITICAL. */
 void aLowerOnlyProfileIsApplied() {
     EnvironmentMonitorHarness harness;
@@ -169,6 +214,7 @@ int main() {
     RUN_TEST(aRejectedSignInIsRetriedEveryThirtySeconds);
     RUN_TEST(noWifiSkipsTheEdge);
     RUN_TEST(aValidProfileIsApplied);
+    RUN_TEST(aLongConfigurationIsApplied);
     RUN_TEST(aLowerOnlyProfileIsApplied);
     RUN_TEST(invalidProfilesAreIgnored);
     RUN_TEST(aMissingProfileIsReadAgainEveryThirtySeconds);

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The node applies the profile of an environment that has luminosity thresholds. The `HttpGatewayClient` of the
+  framework keeps 511 bytes of a response and that configuration is longer (589 bytes from an Edge in development), so
+  the JSON was cut and the node kept its default air quality limits without a message. It now reads the configuration
+  with the `HTTPClient` of the ESP32 core, as the Container Monitor does, and says on the serial monitor why a
+  configuration was not applied (#15).
+
 ## [1.1.0] - 2026-11-26
 
 The node measures the light of the room with a BH1750, watches motion only in the dark, runs on the Modest IoT Nano

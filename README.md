@@ -82,6 +82,9 @@ Notes on the framework v1.3.0:
   rejects, so the node writes the fields of each reading with a `JsonTelemetryWriter` and posts them with
   `sendRequest()`. The client sends only the `Authorization`
   header, so the API key goes as a Bearer token, which the Edge accepts since ADR-0018.
+- `HttpGatewayClient` keeps only 511 bytes of a response, and the configuration of an environment with the air quality
+  and luminosity thresholds is longer (589 bytes from an Edge in development, which indents its JSON), so the node
+  reads it with the `HTTPClient` of the ESP32 core and the same Bearer token.
 - The `GasSensor` raises `DATA_READ` only when Rs/R0 changes by more than 0.05 (an absolute step, about a fifth of the
   ppm value near 800 ppm). The device takes R0 from the sample that ends the calibration and classifies the latest
   sample every second with the MQ-135 curve, so it does not miss a change of state.
@@ -159,15 +162,15 @@ What to expect:
 
 The host tests compile the real `EnvironmentMonitor.ino`, unchanged, on a computer, with the classes of the Modest IoT
 Nano Framework v1.3.0 and its host fakes. The framework tests each of its classes alone, so its fakes do not run
-FreeRTOS; `tests/fakes` adds what a whole sketch needs: working queues, tasks and timer, `Serial`, and an NTP clock the
-tests control. The tests check what the node does from the outside: the LED, the buzzer, the readings it queues and the
+FreeRTOS; `tests/fakes` adds what a whole sketch needs: working queues, tasks and timer, `Serial`, an NTP clock the
+tests control, and an `HTTPClient` whose GET answers the body the test sets. The tests check what the node does from the outside: the LED, the buzzer, the readings it queues and the
 requests it sends to the Edge.
 
 | Suite | Stories | What it checks |
 |-------|---------|----------------|
 | `tests/AirQualityAlarm` | MS01, MS03, MS04 | Calibration, states, the 20 ppm margin, LED colors and beeps |
 | `tests/EdgeReadings` | MS02, MS05 | JSON of the readings, when they are sent, motion, NTP clock, posting and 401 |
-| `tests/EdgeConfiguration` | MS14, MS15 | Bearer key, sign-in, valid and invalid profiles, retry intervals |
+| `tests/EdgeConfiguration` | MS14, MS15 | Bearer key, sign-in, valid, long and invalid profiles, retry intervals |
 | `tests/LightSensor` | Light | Luminosity in the readings, the 10-sample average, a BH1750 that fails or is missing, and the motion watch |
 
 Run them from the root of the repository; they need g++ with C++17, git and curl:
